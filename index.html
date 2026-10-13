@@ -1,0 +1,2073 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Câmeras do Mundo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<style>
+  :root {
+    --bg: #11151c; --panel: #1a202b; --line: #2c3442; --text: #e8ecf2;
+    --muted: #9aa5b5; --accent: #ff5a3c; --accent2: #ffb03c; --radio: #2bbfb0;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; }
+
+  /* barra superior */
+  #bar { position: absolute; z-index: 1000; top: 12px; left: 12px; right: 12px;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center; pointer-events: none; }
+  #bar > * { pointer-events: auto; }
+  .brand { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 0 0 var(--accent); animation: pulse 1.8s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  #searchBox { position: relative; flex: 1 1 260px; max-width: 420px; }
+  #search { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font: inherit; outline: none; }
+  #search:focus { border-color: var(--accent2); }
+  #results { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: none; }
+  #results div { padding: 8px 12px; cursor: pointer; }
+  #results div:hover, #results div.sel { background: #252d3a; }
+  #results small { color: var(--muted); }
+  button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent2); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  #status { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; color: var(--muted); }
+  #status:empty { display: none; }
+
+  /* modo 3D (globo) */
+  #globe { position: absolute; inset: 0; z-index: 500; background: #000; }
+  #g3Btn { background: linear-gradient(135deg, #2a5bd7, #7b4dff); border-color: #7b4dff; color: #fff; font-weight: 600; }
+  body.modo3d #nightBtn, body.modo3d #layerBtn, body.modo3d #status, body.modo3d .leaflet-control-container { display: none; }
+  .g3v { width: 22px; height: 22px; cursor: pointer; pointer-events: auto; }
+  .g3v > div { width: 100%; height: 100%; filter: drop-shadow(0 0 3px rgba(0,0,0,.9)); transition: transform .8s; }
+  .g3v svg { width: 100%; height: 100%; display: block; }
+  #g3card { position: absolute; z-index: 1003; left: 50%; transform: translateX(-50%); bottom: 90px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 34px 6px 2px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5); max-width: calc(100% - 24px); }
+  #g3card button { position: absolute; top: 6px; right: 6px; padding: 2px 8px; }
+  .scene-tooltip { pointer-events: none; }
+
+  /* painel Explorar (esquerda) */
+  #explore { position: absolute; z-index: 1000; top: 64px; left: 12px; bottom: 12px; width: min(310px, calc(100% - 24px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+  #explore.closed { display: none; }
+  #exOpen { position: absolute; z-index: 1000; top: 64px; left: 12px; display: none; }
+  #explore.closed + #exOpen { display: block; }
+  .ex-head { display: flex; align-items: center; padding: 10px 12px 0; font-size: 15px; }
+  .ex-head button { margin-left: auto; padding: 2px 10px; }
+  .ex-warn { margin: 10px 12px 0; padding: 8px 10px; border-radius: 8px; background: #4a3410; color: #ffd9a0; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .chips button { padding: 5px 9px; font-size: 13px; }
+  .chips button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chips span { font-size: 11px; opacity: .85; }
+  #exAll { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  #exAll button { text-align: left; }
+  .ex-list { flex: 1; overflow-y: auto; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .ex-list .info { color: var(--muted); font-size: 12px; padding: 2px 2px 6px; }
+  .ex-item { display: flex; gap: 8px; align-items: center; text-align: left; padding: 7px 8px; width: 100%; flex: none; }
+  .ex-item .ic { flex: none; width: 22px; text-align: center; }
+  .ex-item .tx { min-width: 0; }
+  .ex-item .t, .ex-item .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ex-item .s { color: var(--muted); font-size: 12px; }
+  .ex-item img { width: 40px; height: 24px; object-fit: cover; border-radius: 3px; flex: none; background: #0004; }
+
+  /* painel do player */
+  #panel { position: absolute; z-index: 1001; top: 0; right: 0; bottom: 0; width: min(560px, 100%);
+    background: var(--panel); border-left: 1px solid var(--line); transform: translateX(100%);
+    transition: transform .25s ease; display: flex; flex-direction: column; overflow-y: auto; }
+  #panel.open { transform: none; }
+  #panel > * { flex-shrink: 0; }   /* com o painel rolando, o player não pode ser espremido até sumir */
+  #panel header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 10px; }
+  #panel h2 { margin: 0; font-size: 17px; }
+  #panel .where { color: var(--muted); margin-top: 2px; }
+  #panel .close { margin-left: auto; align-self: flex-start; padding: 4px 10px; }
+  #tabs { display: flex; gap: 6px; padding: 10px 16px 0; flex-wrap: wrap; }
+  #tabs button { padding: 5px 10px; font-size: 13px; }
+  #tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #playerWrap { margin: 10px 16px; aspect-ratio: 16 / 10; background: #000; border-radius: 8px; overflow: hidden; }
+  #playerWrap iframe, #playerWrap img { width: 100%; height: 100%; border: 0; object-fit: contain; display: block; }
+  #panel .links { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+  #panel .links a { color: var(--accent2); text-decoration: none; }
+  #panel .links a:hover { text-decoration: underline; }
+  #panel .note { color: var(--muted); font-size: 12px; padding: 0 16px 16px; margin-top: auto; }
+
+  /* janela da chave */
+  .dlg { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; padding: 16px; }
+  .dlg.open { display: flex; }
+  .dlg .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px; max-width: 520px; width: 100%; }
+  .dlg h3 { margin: 0 0 10px; }
+  .dlg ol { padding-left: 20px; color: var(--muted); }
+  .dlg a { color: var(--accent2); }
+  .dlg input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit; margin: 8px 0 14px; }
+  .dlg .row { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* marcadores */
+  .cam-icon { width: 14px; height: 14px; border-radius: 50%; background: var(--accent);
+    border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large { background: rgba(255,90,60,.3); }
+  .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+    background: rgba(255,90,60,.85); color: #fff; font-weight: 600; }
+  .leaflet-tooltip { font: 13px "Segoe UI", system-ui, sans-serif; }
+  .radio-icon { width: 12px; height: 12px; border-radius: 50%; background: var(--radio);
+    border: 2px solid #fff; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  .radio-cluster { background: rgba(43,191,176,.3); border-radius: 50%; }
+  .radio-cluster div { width: 30px; height: 30px; margin: 5px; border-radius: 50%; background: rgba(43,191,176,.9);
+    color: #fff; font: 600 12px/30px "Segoe UI", system-ui, sans-serif; text-align: center; }
+
+  /* botões liga/desliga */
+  button.toggle.on { border-color: var(--radio); box-shadow: inset 0 0 0 1px var(--radio); }
+
+  /* "agora aqui": tempo, hora e rádios (painel da câmera e popup do mapa) */
+  .here { padding: 0 16px 16px; }
+  .here h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .wx { display: flex; align-items: center; gap: 12px; }
+  .wx .big { font-size: 30px; line-height: 1; }
+  .wx .t { font-size: 22px; font-weight: 600; }
+  .wx .sub { color: var(--muted); font-size: 13px; }
+  .rlist { display: flex; flex-direction: column; gap: 4px; }
+  .rlist button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 6px 8px; width: 100%; }
+  .rlist img { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; background: #0004; flex: none; }
+  .rlist .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rlist small { color: var(--muted); }
+  .muted { color: var(--muted); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); }
+  .leaflet-popup-content { margin: 4px 0; width: 280px !important; }
+  .leaflet-popup-content .here { padding: 0 12px 10px; }
+  .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
+
+  /* YouTube */
+  .yt-icon { width: 20px; height: 14px; border-radius: 4px; background: #ff0033; border: 1.5px solid #fff;
+    box-shadow: 0 0 6px rgba(0,0,0,.6); position: relative; }
+  .yt-icon::after { content: ''; position: absolute; left: 7px; top: 3px; border-style: solid;
+    border-width: 4px 0 4px 6px; border-color: transparent transparent transparent #fff; }
+  .ylist img { width: 40px; height: 22px; }
+  .dlg ol li { margin-bottom: 4px; }
+
+  /* câmeras de trânsito da CET */
+  .cet-icon { width: 16px; height: 16px; border-radius: 4px; background: #f7d10d; border: 2px solid #1d2b6b;
+    box-shadow: 0 0 6px rgba(0,0,0,.6); font: 700 9px/12px "Segoe UI", sans-serif; color: #1d2b6b; text-align: center; }
+  .cet-icon.off { background: #9aa5b5; }
+
+  /* aeroportos e portos com câmera */
+  .spot-icon { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; color: #fff;
+    font: 700 13px/20px "Segoe UI", sans-serif; text-align: center; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  .spot-icon.airport { background: #7b4dff; }
+  .spot-icon.port { background: #0a8f9c; }
+
+  /* São Paulo agora / Meu bairro */
+  .sp-card { display: flex; gap: 10px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--line);
+    border-radius: 10px; margin-bottom: 6px; background: #ffffff05; }
+  .sp-card.medio { border-color: #ffb03c88; background: #ffb03c12; }
+  .sp-card.alto { border-color: #ff3b3b99; background: #ff3b3b18; }
+  .sp-ic { font-size: 20px; line-height: 1.2; }
+  .sp-t { color: var(--muted); font-size: 12px; }
+  .sp-v { font-weight: 600; }
+  .sp-d { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .sp-d button, .info button { padding: 3px 8px; font-size: 12px; margin-top: 4px; }
+  .info button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sp-clima { padding: 4px 2px 10px; }
+  .linhas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .linha { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 6px 2px 2px; border-radius: 10px;
+    background: #ffffff0d; border: 1px solid transparent; }
+  .linha b { display: inline-block; min-width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%;
+    color: #fff; font-size: 11px; text-shadow: 0 0 2px #000; }
+  .linha.ruim { border-color: #ffb03c; background: #ffb03c1a; }
+  .linha.fechada { opacity: .55; }
+  .sp-alerta { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; }
+  .sp-alerta.ok { background: #2ecc7118; border: 1px solid #2ecc7155; }
+  .sp-alerta.medio { background: #ffb03c18; border: 1px solid #ffb03c88; }
+  .sp-alerta.alto { background: #ff3b3b22; border: 1px solid #ff3b3b; animation: piscar 1.2s infinite; }
+  @keyframes piscar { 50% { background: #ff3b3b44; } }
+  .heli { width: 26px; height: 26px; color: #ffd54a; filter: drop-shadow(0 0 3px rgba(0,0,0,.9)); }
+  .heli.alerta { color: #ff3b3b; }
+  .heli svg { width: 100%; height: 100%; display: block; }
+  .casa { font-size: 24px; line-height: 28px; text-align: center; filter: drop-shadow(0 0 3px rgba(0,0,0,.7)); }
+  .pulsa { animation: pulsa 1.6s infinite; }
+  @keyframes pulsa { 50% { stroke-opacity: .25; fill-opacity: .04; } }
+
+  /* navios */
+  .ship { width: 22px; height: 22px; filter: drop-shadow(0 0 3px rgba(0,0,0,.7)); }
+  .ship svg { width: 100%; height: 100%; display: block; }
+
+  /* aviões */
+  .plane { width: 22px; height: 22px; filter: drop-shadow(0 0 2px rgba(0,0,0,.8)); transition: transform .5s; }
+  .plane svg { width: 100%; height: 100%; display: block; }
+  .pinfo { padding: 6px 12px; }
+  .pinfo b { font-size: 15px; }
+  .pinfo .row { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .pinfo a { color: var(--accent2); text-decoration: none; margin-right: 10px; }
+
+  /* mini player de rádio */
+  #radio { position: absolute; z-index: 1002; left: 50%; transform: translateX(-50%); bottom: 24px; width: min(380px, calc(100% - 24px));
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    display: none; align-items: center; gap: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+  #radio.open { display: flex; }
+  @media (max-width: 760px) { #radio { bottom: 12px; } }
+  #radio img { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: #0004; flex: none; }
+  #radio .info { flex: 1; min-width: 0; }
+  #radio .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #radio .sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #radio .live { color: var(--radio); }
+  #radio button { padding: 6px 10px; }
+  #radio input[type=range] { width: 70px; accent-color: var(--radio); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="globe" hidden></div>
+<div id="g3card" hidden></div>
+
+<div id="bar">
+  <div class="brand"><span class="dot"></span>Câmeras do Mundo</div>
+  <div id="searchBox">
+    <input id="search" placeholder="Ir para… (cidade, praia, montanha)" autocomplete="off">
+    <div id="results"></div>
+  </div>
+  <button id="surprise" class="primary" title="Viajar para um lugar aleatório">🎲 Surpreenda-me</button>
+  <button id="g3Btn" title="Ver o planeta em 3D">🌍 3D</button>
+  <button id="nightBtn" class="toggle" title="Mostrar onde é dia e onde é noite agora">🌗 Dia/noite</button>
+  <button id="layerBtn" title="Alternar mapa / satélite">🛰️ Satélite</button>
+  <button id="keyBtn" title="Configurar chave da Windy">🔑</button>
+  <div id="status">Carregando…</div>
+</div>
+
+<aside id="explore">
+  <div class="ex-head"><b>Explorar</b><button id="exClose" title="Recolher">‹</button></div>
+  <div id="exWarn" class="ex-warn" hidden></div>
+  <div class="chips" id="chips">
+    <button data-cat="all">🌍 Tudo</button>
+    <button data-cat="cams">📷 Webcams <span></span></button>
+    <button data-cat="cet">🚦 CET <span></span></button>
+    <button data-cat="yt">📺 YouTube <span></span></button>
+    <button data-cat="radios">📻 Rádios <span></span></button>
+    <button data-cat="planes">✈️ Aviões <span></span></button>
+    <button data-cat="ships">🚢 Navios <span></span></button>
+    <button data-cat="spots">🛫 Aeroportos e portos <span></span></button>
+    <button data-cat="sp">🏙️ SP agora <span></span></button>
+    <button data-cat="bairro">📍 Meu bairro <span></span></button>
+  </div>
+  <div id="exAll">
+    <div class="muted">Escolha uma categoria acima para ver só ela no mapa, em lista. Aqui em “Tudo”, ligue ou desligue o que aparece junto:</div>
+    <button id="camBtn" class="toggle" title="Webcams públicas da Windy">📷 Webcams</button>
+    <button id="cetBtn" class="toggle" title="Câmeras de trânsito da CET-SP (São Paulo)">🚦 CET</button>
+    <button id="ytBtn" class="toggle" title="Câmeras ao vivo do YouTube">📺 YouTube</button>
+    <button id="radioBtn" class="toggle" title="Rádios ao vivo">📻 Rádios</button>
+    <button id="planeBtn" class="toggle" title="Aviões voando agora. Cores pela altitude: amarelo até 1.000 m · laranja até 5.000 m · rosa até 9.000 m · roxo acima · cinza no chão">✈️ Aviões</button>
+    <button id="shipBtn" class="toggle" title="Navios agora (AIS). Cores: azul passageiros · verde carga · vermelho petroleiro · laranja pesca · roxo recreio/veleiro · amarelo serviço · azul-escuro outros ou tipo ainda desconhecido">🚢 Navios</button>
+  </div>
+  <div id="exList" class="ex-list" hidden></div>
+</aside>
+<button id="exOpen">☰ Explorar</button>
+
+<aside id="panel">
+  <header>
+    <div>
+      <h2 id="pTitle"></h2>
+      <div class="where" id="pWhere"></div>
+    </div>
+    <button class="close" id="pClose" title="Fechar">✕</button>
+  </header>
+  <div id="tabs"></div>
+  <div id="playerWrap"></div>
+  <div class="links" id="pLinks"></div>
+  <div class="here" id="here"></div>
+  <div class="note">Imagens e transmissões fornecidas por <a href="https://www.windy.com/webcams" target="_blank" rel="noopener" style="color:inherit">Windy.com Webcams</a>.
+    Algumas câmeras atualizam a cada poucos minutos em vez de vídeo contínuo.</div>
+</aside>
+
+<div id="radio">
+  <img id="rIcon" alt="">
+  <div class="info">
+    <div class="nm" id="rName"></div>
+    <div class="sub" id="rSub"></div>
+  </div>
+  <button id="rPlay" title="Tocar / pausar">⏸</button>
+  <input type="range" id="rVol" min="0" max="1" step="0.05" value="0.8" title="Volume">
+  <button id="rClose" title="Fechar">✕</button>
+</div>
+
+<div id="ytDlg" class="dlg">
+  <div class="box">
+    <h3>Chave gratuita do YouTube</h3>
+    <p>Para achar transmissões ao vivo perto de cada lugar, o mapa usa a API oficial do YouTube. A chave é gratuita e não pede cartão:</p>
+    <ol>
+      <li>Entre em <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com</a> com sua conta Google e crie um projeto (nome: <i>CameraWeb</i>).</li>
+      <li>Abra <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">YouTube Data API v3</a> e clique em <b>Ativar</b>.</li>
+      <li>Vá em <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credenciais</a> → <b>Criar credenciais</b> → <b>Chave de API</b>.</li>
+      <li>Copie a chave (começa com <code>AIza</code>) e cole abaixo. Ela fica salva no arquivo <i>chave-youtube.txt</i>.</li>
+    </ol>
+    <input id="ytInput" placeholder="Cole aqui a chave do Google (AIza…)" spellcheck="false">
+    <div class="row">
+      <button id="ytCancel">Agora não</button>
+      <button id="ytSave" class="primary">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="spDlg" class="dlg">
+  <div class="box">
+    <h3>Token gratuito da SPTrans (ônibus)</h3>
+    <p>Com ele, o mapa recebe a posição de todos os ônibus de São Paulo a cada 30 segundos e mostra onde eles estão parados.</p>
+    <ol>
+      <li>Entre em <a href="https://www.sptrans.com.br/desenvolvedores/" target="_blank" rel="noopener">sptrans.com.br/desenvolvedores</a> e cadastre-se.</li>
+      <li>Em <b>Meus Aplicativos</b>, clique em <b>Adicionar novo aplicativo</b> (nome: CameraWeb; descrição: mapa pessoal).</li>
+      <li>Copie o <b>token</b> gerado e cole abaixo. Fica salvo no arquivo <i>chave-sptrans.txt</i>.</li>
+    </ol>
+    <input id="spInput" placeholder="Cole aqui o token da SPTrans" spellcheck="false">
+    <div class="row">
+      <button id="spCancel">Agora não</button>
+      <button id="spSave" class="primary">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="shipDlg" class="dlg">
+  <div class="box">
+    <h3>Chave gratuita para navios</h3>
+    <p>As posições dos navios vêm da AISStream.io, uma rede aberta de receptores AIS. A chave é gratuita:</p>
+    <ol>
+      <li>Entre em <a href="https://aisstream.io/account" target="_blank" rel="noopener">aisstream.io/account</a> e faça login.</li>
+      <li>Na página da conta (<b>Account</b>), crie uma chave de API.</li>
+      <li>Copie e cole abaixo (ela só aparece uma vez no site). Fica salva no arquivo <i>chave-aisstream.txt</i>.</li>
+    </ol>
+    <input id="shipInput" placeholder="Cole aqui a chave da AISStream" spellcheck="false">
+    <div class="row">
+      <button id="shipCancel">Agora não</button>
+      <button id="shipSave" class="primary">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="keyDlg" class="dlg">
+  <div class="box">
+    <h3>Chave gratuita da Windy</h3>
+    <p>As câmeras vêm da base pública da Windy (dezenas de milhares no mundo todo). Para usar, é preciso uma chave gratuita:</p>
+    <ol>
+      <li>Acesse <a href="https://api.windy.com/keys" target="_blank" rel="noopener">api.windy.com/keys</a> e crie uma conta.</li>
+      <li>Crie uma chave do tipo <b>Webcams API</b> (plano Free).</li>
+      <li>Cole a chave abaixo. Ela fica guardada só neste navegador.</li>
+    </ol>
+    <input id="keyInput" placeholder="Cole aqui a chave" spellcheck="false">
+    <div class="row">
+      <button id="keyCancel">Cancelar</button>
+      <button id="keySave" class="primary">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var API = 'https://api.windy.com/webcams/api/v3';
+  var KEY_STORE = 'cameraweb.windyKey';
+  var VIEW_STORE = 'cameraweb.view';
+
+  function store(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
+  }
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function setStatus(t) { $('status').textContent = t; }
+
+  // ---------- mapa ----------
+  var saved = null;
+  try { saved = JSON.parse(store(VIEW_STORE) || 'null'); } catch (e) {}
+  var map = L.map('map', { worldCopyJump: true, minZoom: 2, zoomControl: false })
+    .setView(saved ? [saved.lat, saved.lng] : [20, 0], saved ? saved.z : 3);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  var streets = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Mapa &copy; Esri, HERE, Garmin, OpenStreetMap'
+  }).addTo(map);
+  var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Imagens &copy; Esri'
+  });
+  $('layerBtn').onclick = function () {
+    if (map.hasLayer(streets)) { map.removeLayer(streets); satellite.addTo(map); this.textContent = '🗺️ Mapa'; }
+    else { map.removeLayer(satellite); streets.addTo(map); this.textContent = '🛰️ Satélite'; }
+  };
+
+  var cluster = L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, chunkedLoading: true });
+  map.addLayer(cluster);
+  var icon = L.divIcon({ className: '', html: '<div class="cam-icon"></div>', iconSize: [14, 14] });
+  var markers = {};   // webcamId -> marker
+  var camData = {};   // webcamId -> dados da câmera (para a lista do Explorar)
+  var count = 0;
+
+  // ---------- chave ----------
+  function key() { return store(KEY_STORE) || ''; }
+  function openKey() { $('keyInput').value = key(); $('keyDlg').classList.add('open'); $('keyInput').focus(); }
+  $('keyBtn').onclick = openKey;
+  $('keyCancel').onclick = function () { $('keyDlg').classList.remove('open'); };
+  $('keySave').onclick = function () {
+    store(KEY_STORE, $('keyInput').value.trim());
+    // aberto pelo .bat: o servidor guarda a chave em chave-windy.txt para as próximas vezes
+    if (/^https?:/.test(location.protocol))
+      fetch('/api/chave', { method: 'POST', body: key() }).catch(function () {});
+    $('keyDlg').classList.remove('open');
+    load();
+  };
+  $('keyInput').onkeydown = function (e) { if (e.key === 'Enter') $('keySave').click(); };
+
+  function api(path) {
+    return fetch(API + path, { headers: { 'x-windy-api-key': key() } }).then(function (r) {
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (b) {
+        var err = new Error(b.message || ('HTTP ' + r.status)); err.status = r.status; throw err;
+      });
+      return r.json();
+    });
+  }
+
+  // ---------- carregar câmeras da área visível ----------
+  // A API v3 (/map/clusters) só aceita zoom 4 a 18 e limita o tamanho do retângulo:
+  // no zoom z, largura <= 360 / 2^(z-1) graus e altura <= 360 / 2^z graus.
+  // Por isso a tela é dividida numa grade fixa de células desse tamanho; cada célula
+  // é baixada uma vez só (cache), respeitando o limite de ~300 chamadas/minuto.
+  var MIN_Z = 4, MAX_Z = 18, PARALLEL = 6;
+  var done = {};   // "z/coluna/linha" -> true
+
+  function fetchCell(z, col, row) {
+    var lonW = 360 / Math.pow(2, z - 1), latH = 360 / Math.pow(2, z);
+    var w = -180 + col * lonW, s = -90 + row * latH;
+    var q = '/map/clusters?northLat=' + Math.min(s + latH, 90) + '&eastLon=' + Math.min(w + lonW, 180) +
+      '&southLat=' + s + '&westLon=' + w + '&zoom=' + z + '&include=location';
+    return api(q);
+  }
+
+  function addCams(data) {
+    var list = Array.isArray(data) ? data : (data && (data.webcams || data.result || data.clusters)) || [];
+    var fresh = [];
+    list.forEach(function (c) {
+      var id = c.webcamId || c.id;
+      var loc = c.location || {};
+      if (!id || markers[id] || loc.latitude == null) return;
+      var m = L.marker([loc.latitude, loc.longitude], { icon: icon, title: c.title || '' });
+      m.bindTooltip(esc(c.title || 'Câmera'), { direction: 'top', offset: [0, -8] });
+      m.on('click', function () { openCam(id, c); });
+      markers[id] = m; camData[id] = c; fresh.push(m); count++;
+    });
+    if (fresh.length) { cluster.addLayers(fresh); refreshExplore(); }
+  }
+
+  var timer = null, seq = 0;
+  function load() {
+    clearTimeout(timer);
+    timer = setTimeout(doLoad, 350);
+  }
+  function doLoad() {
+    var c = map.getCenter();
+    store(VIEW_STORE, JSON.stringify({ lat: c.lat, lng: c.lng, z: map.getZoom() }));
+    if (!map.hasLayer(cluster)) { setStatus(''); return; }
+    if (!key()) {
+      if (SERVED && !chaveLida) return;   // a chave ainda está vindo do servidor; load() roda de novo quando chegar
+      setStatus('Falta a chave da Windy'); openKey(); return;
+    }
+
+    var z = Math.max(MIN_Z, Math.min(Math.round(map.getZoom()), MAX_Z));
+    var lonW = 360 / Math.pow(2, z - 1), latH = 360 / Math.pow(2, z);
+    var cols = Math.round(360 / lonW), rows = Math.round(180 / latH);
+    var b = map.getBounds();
+    var c0 = Math.floor((b.getWest() + 180) / lonW), c1 = Math.floor((b.getEast() + 180) / lonW);
+    var r0 = Math.max(0, Math.floor((Math.max(b.getSouth(), -90) + 90) / latH));
+    var r1 = Math.min(rows - 1, Math.floor((Math.min(b.getNorth(), 90) + 90) / latH));
+    if (c1 - c0 >= cols) { c0 = 0; c1 = cols - 1; }
+
+    // células visíveis ainda não baixadas, do centro para fora
+    var cc = (c0 + c1) / 2, rc = (r0 + r1) / 2, todo = [];
+    for (var cx = c0; cx <= c1; cx++) for (var ry = r0; ry <= r1; ry++) {
+      var col = ((cx % cols) + cols) % cols, k = z + '/' + col + '/' + ry;
+      if (!done[k]) todo.push({ k: k, col: col, row: ry, d: Math.abs(cx - cc) + Math.abs(ry - rc) });
+    }
+    todo.sort(function (a, b2) { return a.d - b2.d; });
+
+    var my = ++seq, failed = null;
+    function report() {
+      if (my !== seq) return;
+      if (failed) {
+        if (failed.status === 401 || failed.status === 403) setStatus('Chave inválida ou ainda não ativada');
+        else if (failed.status === 429) {
+          // limite de ~300 pedidos/minuto do plano gratuito: espera e continua sozinho
+          setStatus('A Windy pediu uma pausa — continuo em 20 s…');
+          setTimeout(function () { if (my === seq) load(); }, 20000);
+        }
+        else setStatus('Erro ao buscar câmeras: ' + failed.message);
+      } else {
+        var vb = map.getBounds(), visible = 0;
+        for (var id in markers) if (vb.contains(markers[id].getLatLng())) visible++;
+        setStatus(visible
+          ? visible.toLocaleString('pt-BR') + ' câmeras nesta área · aproxime para ver mais'
+          : 'Nenhuma câmera nesta área · afaste o zoom ou tente 🎲');
+      }
+    }
+    if (!todo.length) { report(); return; }
+    setStatus('Procurando câmeras…');
+
+    var next = 0, running = 0;
+    function pump() {
+      if (my !== seq) return;   // o usuário já mudou de lugar; para de pedir esta área
+      while (running < PARALLEL && next < todo.length) {
+        var t = todo[next++];
+        running++;
+        fetchCell(z, t.col, t.row).then((function (t) { return function (data) {
+          done[t.k] = true; addCams(data);
+        }; })(t), function (err) { failed = err; }).then(function () {
+          running--;
+          if (failed && failed.status !== 400) { next = todo.length; }
+          if (running === 0 && next >= todo.length) report(); else pump();
+        });
+      }
+    }
+    pump();
+  }
+  map.on('moveend', load);
+
+  // ---------- painel da câmera ----------
+  var current = null;
+  function playerUrl(p, kind, id) {
+    var v = p && p[kind];
+    if (typeof v === 'string') return v;
+    if (v && typeof v === 'object') return v.embed || v.link || v.url || null;
+    return null;
+  }
+
+  function openCam(id, basic) {
+    current = id;
+    var loc = basic.location || {};
+    $('pTitle').textContent = basic.title || 'Câmera';
+    $('pWhere').textContent = [loc.city, loc.region, loc.country].filter(Boolean).join(', ');
+    $('tabs').innerHTML = '';
+    $('pLinks').innerHTML = '';
+    $('playerWrap').innerHTML = '';
+    $('panel').classList.add('open');
+    if (loc.latitude != null) renderHere($('here'), loc.latitude, loc.longitude,
+      { city: loc.city, state: loc.region, cc: loc.country_code, country: loc.country });
+
+    api('/webcams/' + id + '?include=location,images,player,urls').then(function (cam) {
+      if (current !== id) return;
+      var l = cam.location || loc;
+      $('pTitle').textContent = cam.title || basic.title || 'Câmera';
+      $('pWhere').textContent = [l.city, l.region, l.country].filter(Boolean).join(', ');
+
+      var p = cam.player || {};
+      var kinds = [['live', '🔴 Ao vivo'], ['day', 'Últimas 24 h'], ['month', 'Último mês'], ['year', 'Último ano'], ['lifetime', 'Tudo']];
+      var opts = kinds.filter(function (k) { return playerUrl(p, k[0]); });
+      var img = cam.images && cam.images.current && (cam.images.current.preview || cam.images.current.thumbnail);
+      if (img) opts.push(['__img', '📷 Foto atual']);
+
+      function show(kind, btn) {
+        Array.prototype.forEach.call($('tabs').children, function (x) { x.classList.remove('on'); });
+        btn.classList.add('on');
+        $('playerWrap').innerHTML = kind === '__img'
+          ? '<img alt="" src="' + esc(img) + '">'
+          : '<iframe allow="autoplay; fullscreen" allowfullscreen src="' + esc(playerUrl(p, kind)) + '"></iframe>';
+      }
+      opts.forEach(function (o, i) {
+        var bt = document.createElement('button');
+        bt.textContent = o[1];
+        bt.onclick = function () { show(o[0], bt); };
+        $('tabs').appendChild(bt);
+        if (i === 0) show(o[0], bt);
+      });
+      if (!opts.length) $('playerWrap').innerHTML =
+        '<div style="padding:24px;color:#9aa5b5">Esta câmera não tem imagem disponível agora.</div>';
+
+      var links = [];
+      var detail = (cam.urls && (cam.urls.detail || cam.urls.provider)) || ('https://www.windy.com/webcams/' + id);
+      links.push('<a href="' + esc(detail) + '" target="_blank" rel="noopener">Abrir esta câmera na Windy ↗</a>');
+      if (cam.urls && cam.urls.provider && cam.urls.provider !== detail)
+        links.push('<a href="' + esc(cam.urls.provider) + '" target="_blank" rel="noopener">Site de quem opera a câmera ↗</a>');
+      var place = l.city || cam.title || '';
+      links.push('<a href="https://www.youtube.com/results?sp=EgJAAQ%253D%253D&search_query=' +
+        encodeURIComponent('live cam ' + place) + '" target="_blank" rel="noopener">Procurar transmissões ao vivo no YouTube em ' + esc(place) + ' ↗</a>');
+      $('pLinks').innerHTML = links.join('');
+    }).catch(function (err) {
+      if (current !== id) return;
+      $('playerWrap').innerHTML = '<div style="padding:24px;color:#9aa5b5">Não consegui abrir: ' + esc(err.message) + '</div>';
+    });
+  }
+  $('pClose').onclick = function () { $('panel').classList.remove('open'); $('playerWrap').innerHTML = ''; current = null; };
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') $('pClose').click(); });
+
+  // ---------- busca de lugares (Photon / OpenStreetMap) ----------
+  var sTimer = null, hits = [], sel = -1;
+  function renderHits() {
+    $('results').innerHTML = hits.map(function (h, i) {
+      var p = h.properties;
+      var sub = [p.state, p.country].filter(Boolean).join(', ');
+      return '<div data-i="' + i + '"' + (i === sel ? ' class="sel"' : '') + '>' + esc(p.name) + ' <small>' + esc(sub) + '</small></div>';
+    }).join('');
+    $('results').style.display = hits.length ? 'block' : 'none';
+  }
+  function goHit(h) {
+    var p = h.properties, c = h.geometry.coordinates;
+    if (p.extent) map.fitBounds([[p.extent[1], p.extent[0]], [p.extent[3], p.extent[2]]], { maxZoom: 13 });
+    else map.setView([c[1], c[0]], 12);
+    hits = []; renderHits(); $('search').blur();
+  }
+  $('search').oninput = function () {
+    var q = this.value.trim();
+    clearTimeout(sTimer);
+    if (q.length < 3) { hits = []; renderHits(); return; }
+    sTimer = setTimeout(function () {
+      fetch('https://photon.komoot.io/api/?limit=6&q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (d) { hits = d.features || []; sel = -1; renderHits(); })
+        .catch(function () {});
+    }, 300);
+  };
+  $('search').onkeydown = function (e) {
+    if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, hits.length - 1); renderHits(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); renderHits(); e.preventDefault(); }
+    else if (e.key === 'Enter' && hits.length) goHit(hits[Math.max(sel, 0)]);
+    else if (e.key === 'Escape') { hits = []; renderHits(); }
+  };
+  $('results').onclick = function (e) {
+    var d = e.target.closest('[data-i]'); if (d) goHit(hits[+d.getAttribute('data-i')]);
+  };
+
+  // ---------- surpreenda-me ----------
+  // Sorteia uma entre as 1000 câmeras mais vistas (o plano gratuito não passa do offset 1000),
+  // voa até ela e abre o player.
+  $('surprise').onclick = function () {
+    if (!key()) { openKey(); return; }
+    setStatus('Sorteando uma câmera…');
+    var off = Math.floor(Math.random() * 1001);
+    api('/webcams?limit=1&offset=' + off + '&sortKey=popularity&sortDirection=desc&include=location')
+      .then(function (d) {
+        var c = d.webcams && d.webcams[0];
+        if (!c || !c.location) throw new Error('nenhuma câmera sorteada');
+        var l = c.location;
+        setStatus('Viajando para ' + (l.city || c.title) + (l.country ? ', ' + l.country : '') + '…');
+        addCams([c]);
+        if (irPara(l.latitude, l.longitude, 12, 3600)) setTimeout(function () { openCam(c.webcamId, c); }, 3700);
+        else {
+          map.flyTo([l.latitude, l.longitude], 12, { duration: 2.5 });
+          map.once('moveend', function () { openCam(c.webcamId, c); });
+        }
+      })
+      .catch(function (err) { setStatus('Erro no sorteio: ' + err.message); });
+  };
+
+  // ---------- agora aqui: tempo, hora local e rádios ----------
+  // Tempo: Open-Meteo (sem chave). Códigos WMO -> texto.
+  var WX = {
+    0: ['Céu limpo', '☀️', '🌙'], 1: ['Quase limpo', '🌤️', '🌙'], 2: ['Parcialmente nublado', '⛅', '☁️'],
+    3: ['Nublado', '☁️'], 45: ['Neblina', '🌫️'], 48: ['Neblina com geada', '🌫️'],
+    51: ['Garoa fraca', '🌦️'], 53: ['Garoa', '🌦️'], 55: ['Garoa forte', '🌧️'],
+    56: ['Garoa congelante', '🌧️'], 57: ['Garoa congelante', '🌧️'],
+    61: ['Chuva fraca', '🌦️'], 63: ['Chuva', '🌧️'], 65: ['Chuva forte', '🌧️'],
+    66: ['Chuva congelante', '🌧️'], 67: ['Chuva congelante', '🌧️'],
+    71: ['Neve fraca', '🌨️'], 73: ['Neve', '🌨️'], 75: ['Neve forte', '❄️'], 77: ['Grãos de neve', '🌨️'],
+    80: ['Pancadas de chuva', '🌦️'], 81: ['Pancadas de chuva', '🌧️'], 82: ['Pancadas fortes', '⛈️'],
+    85: ['Pancadas de neve', '🌨️'], 86: ['Pancadas de neve', '❄️'],
+    95: ['Trovoada', '⛈️'], 96: ['Trovoada com granizo', '⛈️'], 99: ['Trovoada com granizo', '⛈️']
+  };
+  function hhmm(d) { return ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2); }
+
+  function weather(lat, lng) {
+    return fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(3) + '&longitude=' + lng.toFixed(3) +
+      '&current=temperature_2m,weather_code,wind_speed_10m,is_day&daily=sunrise,sunset&forecast_days=1&timezone=auto')
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+  function weatherHtml(w) {
+    var c = w.current || {}, info = WX[c.weather_code] || ['—', '🌡️'];
+    var emoji = (!c.is_day && info[2]) || info[1];
+    var local = new Date(Date.now() + (w.utc_offset_seconds || 0) * 1000);
+    var sun = w.daily && w.daily.sunrise ? ' · ☀️ ' + w.daily.sunrise[0].slice(11) + ' – ' + w.daily.sunset[0].slice(11) : '';
+    return '<div class="wx"><div class="big">' + emoji + '</div><div>' +
+      '<div><span class="t">' + Math.round(c.temperature_2m) + '°C</span> ' + esc(info[0]) + '</div>' +
+      '<div class="sub">🕒 ' + hhmm(local) + ' lá agora (' + (c.is_day ? 'dia' : 'noite') + ') · 💨 ' +
+      Math.round(c.wind_speed_10m) + ' km/h' + sun + '</div></div></div>';
+  }
+
+  // Rádios: Radio Browser (sem chave, vários servidores espelho).
+  var RB = ['https://de1.api.radio-browser.info', 'https://de2.api.radio-browser.info', 'https://all.api.radio-browser.info'];
+  function rb(path, i) {
+    i = i || 0;
+    return fetch(RB[i] + path).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .catch(function (err) { if (i + 1 < RB.length) return rb(path, i + 1); throw err; });
+  }
+  var RB_BASE = '/json/stations/search?hidebroken=true&order=clickcount&reverse=true';
+  function playable(s) { return s.url_resolved && !s.hls; }
+
+  // Poucas rádios têm coordenada; por isso juntamos as próximas (por GPS) com as mais
+  // ouvidas do mesmo estado e, se ainda faltar, do mesmo país.
+  function radiosNear(lat, lng, place) {
+    function safe(p) { return p.catch(function () { return []; }); }
+    return safe(rb(RB_BASE + '&limit=6&has_geo_info=true&geo_lat=' + lat + '&geo_long=' + lng + '&geo_distance=150000'))
+      .then(function (near) {
+        // no mar ou em lugar sem endereço: usa o estado/país da rádio mais próxima
+        if (!place.cc && near[0]) place = { cc: near[0].countrycode, state: near[0].state };
+        var jobs = [];
+        if (place.cc && place.state) jobs.push(safe(rb(RB_BASE + '&limit=8&countrycode=' + encodeURIComponent(place.cc) +
+          '&state=' + encodeURIComponent(place.state))));
+        if (place.cc) jobs.push(safe(rb(RB_BASE + '&limit=8&countrycode=' + encodeURIComponent(place.cc))));
+        return Promise.all(jobs).then(function (l) { return [near].concat(l); });
+      }).then(function (lists) {
+      var seen = {}, out = [];
+      lists.forEach(function (l) { l.forEach(function (s) {
+        if (out.length < 8 && playable(s) && !seen[s.stationuuid]) { seen[s.stationuuid] = 1; out.push(s); }
+      }); });
+      return out;
+    });
+  }
+  // Para um clique no mapa não sabemos o estado/país: perguntamos ao Photon (OpenStreetMap).
+  function reverse(lat, lng) {
+    return fetch('https://photon.komoot.io/reverse?lat=' + lat + '&lon=' + lng).then(function (r) { return r.json(); })
+      .then(function (d) { var p = (d.features && d.features[0] && d.features[0].properties) || {};
+        return { city: p.city || p.name, state: p.state, cc: p.countrycode, country: p.country }; })
+      .catch(function () { return {}; });
+  }
+
+  var stations = {};   // stationuuid -> estação (para os botões tocarem)
+  function radioListHtml(list) {
+    if (!list.length) return '<div class="muted">Nenhuma rádio por perto (até 150 km).</div>';
+    return '<div class="rlist">' + list.map(function (s) {
+      stations[s.stationuuid] = s;
+      return '<button data-st="' + esc(s.stationuuid) + '"><img alt="" src="' + esc(s.favicon || '') +
+        '" onerror="this.style.visibility=\'hidden\'"><span class="nm">' + esc(s.name.trim()) +
+        ' <small>' + esc([s.state, s.countrycode].filter(Boolean).join(', ')) + '</small></span></button>';
+    }).join('') + '</div>';
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-st]');
+    if (b && stations[b.getAttribute('data-st')]) playStation(stations[b.getAttribute('data-st')]);
+  });
+
+  var hereSeq = 0;
+  function renderHere(el, lat, lng, place) {
+    var my = ++hereSeq;
+    el.innerHTML = '<h4>Agora aqui</h4><div class="muted" data-wx>Consultando o tempo…</div>' +
+      '<h4>📻 Rádios daqui</h4><div class="muted" data-rd>Procurando rádios…</div>';
+    var yts = ytNear(lat, lng);
+    if (yts.length) el.innerHTML += '<h4>📺 Ao vivo no YouTube por perto</h4>' + ytListHtml(yts);
+    var wxEl = el.querySelector('[data-wx]'), rdEl = el.querySelector('[data-rd]');
+    weather(lat, lng).then(function (w) { wxEl.outerHTML = weatherHtml(w); })
+      .catch(function () { wxEl.textContent = 'Tempo indisponível agora.'; });
+    var where = place && place.cc ? Promise.resolve(place) : reverse(lat, lng);
+    where.then(function (p) { return radiosNear(lat, lng, p || {}); })
+      .then(function (list) { rdEl.outerHTML = radioListHtml(list); })
+      .catch(function () { rdEl.textContent = 'Rádios indisponíveis agora.'; });
+    return my;
+  }
+
+  // Clique num ponto vazio do mapa: tempo, hora e rádios daquele lugar.
+  map.on('click', function (e) {
+    if (marcando) return;   // estava escolhendo o ponto do "Meu bairro"
+    var div = document.createElement('div');
+    div.className = 'here';
+    L.popup({ maxWidth: 300 }).setLatLng(e.latlng).setContent(div).openOn(map);
+    renderHere(div, e.latlng.lat, L.Util.wrapNum(e.latlng.lng, [-180, 180], true), null);
+  });
+
+  // ---------- mini player de rádio ----------
+  var audio = new Audio();
+  audio.volume = +(store('cameraweb.vol') || 0.8);
+  $('rVol').value = audio.volume;
+  $('rVol').oninput = function () { audio.volume = +this.value; store('cameraweb.vol', this.value); };
+  function playStation(s) {
+    $('rName').textContent = s.name.trim();
+    $('rSub').innerHTML = '<span class="live">● ao vivo</span> · ' + esc([s.state, s.country].filter(Boolean).join(', ') ||
+      (s.tags || '').split(',').slice(0, 3).join(', '));
+    $('rIcon').style.visibility = s.favicon ? 'visible' : 'hidden';
+    $('rIcon').src = s.favicon || '';
+    $('radio').classList.add('open');
+    audio.src = s.url_resolved;
+    $('rPlay').textContent = '⏳';
+    audio.play().catch(function () {});
+    rb('/json/url/' + s.stationuuid).catch(function () {});   // conta o clique, como o Radio Browser pede
+  }
+  audio.onplaying = function () { $('rPlay').textContent = '⏸'; };
+  audio.onpause = function () { $('rPlay').textContent = '▶'; };
+  audio.onerror = function () {
+    if (!audio.src || !$('radio').classList.contains('open')) return;
+    $('rPlay').textContent = '▶';
+    $('rSub').textContent = 'Esta rádio não respondeu agora — tente outra.';
+  };
+  $('rIcon').onerror = function () { this.style.visibility = 'hidden'; };
+  $('rPlay').onclick = function () { if (audio.paused) audio.play().catch(function () {}); else audio.pause(); };
+  $('rClose').onclick = function () { audio.pause(); audio.removeAttribute('src'); audio.load(); $('radio').classList.remove('open'); };
+
+  // ---------- camada de rádios no mapa ----------
+  var radioLayer = L.markerClusterGroup({
+    maxClusterRadius: 45, showCoverageOnHover: false, chunkedLoading: true,
+    iconCreateFunction: function (c) {
+      return L.divIcon({ html: '<div>' + c.getChildCount() + '</div>', className: 'radio-cluster', iconSize: [40, 40] });
+    }
+  });
+  var radioIcon = L.divIcon({ className: '', html: '<div class="radio-icon"></div>', iconSize: [12, 12] });
+  var radioMarkers = {}, radioData = {}, radioTimer = null, radioLast = '';
+  function loadRadios() {
+    if (!map.hasLayer(radioLayer)) return;
+    var c = map.getCenter(), b = map.getBounds();
+    var radius = Math.min(c.distanceTo(b.getNorthEast()), 20000000);
+    var lat = c.lat.toFixed(2), lng = L.Util.wrapNum(c.lng, [-180, 180], true).toFixed(2);
+    var k = lat + ',' + lng + ',' + Math.round(radius / 1000);
+    if (k === radioLast) return;
+    radioLast = k;
+    rb(RB_BASE + '&has_geo_info=true&limit=400&geo_lat=' + lat + '&geo_long=' + lng + '&geo_distance=' + Math.round(radius))
+      .then(function (list) {
+        var fresh = [];
+        list.forEach(function (s) {
+          if (!playable(s) || radioMarkers[s.stationuuid] || s.geo_lat == null) return;
+          var m = L.marker([s.geo_lat, s.geo_long], { icon: radioIcon });
+          m.bindTooltip('📻 ' + esc(s.name.trim()), { direction: 'top', offset: [0, -7] });
+          m.on('click', function () { playStation(s); });
+          radioMarkers[s.stationuuid] = m; radioData[s.stationuuid] = s; fresh.push(m);
+        });
+        if (fresh.length) { radioLayer.addLayers(fresh); refreshExplore(); }
+      }).catch(function () {});
+  }
+  map.on('moveend', function () { clearTimeout(radioTimer); radioTimer = setTimeout(loadRadios, 500); });
+
+  // ---------- dia e noite ----------
+  // Posição do Sol (aproximação usual, erro < 1°) e a linha onde ele está no horizonte.
+  var night = L.polygon([], { interactive: false, stroke: false, fillColor: '#000a2a', fillOpacity: 0.35 });
+  function nightPolygon(date) {
+    var rad = Math.PI / 180;
+    var jd = date.getTime() / 86400000 + 2440587.5, n = jd - 2451545.0;
+    var gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+    var Lm = (280.460 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * rad;
+    var lambda = (Lm + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * rad;
+    var eps = (23.4393 - 0.0000004 * n) * rad;
+    var alpha = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda)) / rad;
+    var delta = Math.asin(Math.sin(eps) * Math.sin(lambda)) / rad;
+    var pts = [];
+    for (var lng = -540; lng <= 540; lng += 1) {
+      var ha = (gmst * 15 + lng - alpha) * rad;
+      pts.push([Math.atan(-Math.cos(ha) / Math.tan(delta * rad)) / rad, lng]);
+    }
+    var pole = delta < 0 ? 90 : -90;   // o polo que está na noite
+    pts.unshift([pole, -540]); pts.push([pole, 540]);
+    return pts;
+  }
+  function updateNight() { night.setLatLngs(nightPolygon(new Date())); }
+  setInterval(function () { if (map.hasLayer(night)) updateNight(); }, 60000);
+
+  // ---------- aviões em tempo real ----------
+  // Dados ADS-B abertos (adsb.lol / adsb.fi) via servidor.py, porque essas bases não
+  // aceitam chamadas diretas do navegador. Entre uma consulta e outra (10 s), cada
+  // avião anda sozinho pela velocidade e rumo informados.
+  var SERVED = /^https?:/.test(location.protocol);
+  var planeLayer = L.layerGroup();
+  var planes = {};   // hex -> { m: marcador, a: dados, t: hora da posição }
+  var PLANE_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" stroke="#000" stroke-width=".6" d="M12 1.5c.8 0 1.4.9 1.4 2v6.1l8.1 4.7v2.1l-8.1-2.5v5l2.3 1.7v1.6L12 21.3l-3.7.9v-1.6l2.3-1.7v-5l-8.1 2.5v-2.1l8.1-4.7V3.5c0-1.1.6-2 1.4-2z"/></svg>';
+  function altM(a) { return typeof a.alt_baro === 'number' ? a.alt_baro * 0.3048 : null; }
+  function planeColor(a) {
+    var h = altM(a);
+    if (h === null) return '#9aa5b5';          // no chão
+    return h < 1000 ? '#ffd54a' : h < 5000 ? '#ff9f43' : h < 9000 ? '#ff6b81' : '#c779ff';
+  }
+  function planeHtml(a) {
+    return '<div class="plane" style="color:' + planeColor(a) + ';transform:rotate(' + (a.track || a.true_heading || 0) + 'deg)">' + PLANE_SVG + '</div>';
+  }
+  function planeInfo(a) {
+    var cs = (a.flight || '').trim(), h = altM(a);
+    var alt = h === null ? 'no chão' : Math.round(h).toLocaleString('pt-BR') + ' m';
+    var vel = a.gs ? Math.round(a.gs * 1.852) + ' km/h' : '—';
+    return '<div class="pinfo"><b>✈️ ' + esc(cs || a.r || a.hex) + '</b>' +
+      '<div class="row">' + esc([a.desc || a.t, a.r].filter(Boolean).join(' · ') || 'Aeronave') + '</div>' +
+      '<div class="row">Altitude ' + alt + ' · ' + vel + ' · rumo ' + Math.round(a.track || 0) + '°</div>' +
+      '<div class="row" style="margin-top:6px"><a href="https://adsb.lol/?icao=' + esc(a.hex) + '" target="_blank" rel="noopener">Seguir no mapa ↗</a>' +
+      (cs ? '<a href="https://www.flightaware.com/live/flight/' + encodeURIComponent(cs) + '" target="_blank" rel="noopener">Rota do voo ↗</a>' : '') + '</div></div>';
+  }
+  function planeLabel(n) { $('planeBtn').textContent = '✈️ Aviões' + (n === undefined ? '' : ' (' + n + ')'); }
+
+  var planeBusy = false;
+  function loadPlanes() {
+    if (!map.hasLayer(planeLayer) || planeBusy || document.hidden) return;
+    if (!SERVED) { planeLabel('abra pelo .bat'); return; }
+    if (map.getZoom() < 6) { planeLayer.clearLayers(); planes = {}; planeLabel('aproxime'); return; }
+    var c = map.getCenter();
+    var nm = Math.min(250, Math.ceil(c.distanceTo(map.getBounds().getNorthEast()) / 1852));
+    planeBusy = true;
+    fetch('/api/voos?lat=' + c.lat.toFixed(2) + '&lon=' + L.Util.wrapNum(c.lng, [-180, 180], true).toFixed(2) + '&dist=' + nm)
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (d) {
+        var now = Date.now(), seen = {}, n = 0;
+        (d.ac || []).forEach(function (a) {
+          if (a.lat == null || !a.hex) return;
+          seen[a.hex] = 1; n++;
+          var t = now - (a.seen_pos || 0) * 1000, p = planes[a.hex];
+          if (p) {
+            p.a = a; p.t = t;
+            p.m.setLatLng([a.lat, a.lon]);
+            var el = p.m.getElement() && p.m.getElement().firstChild;
+            if (el) { el.style.transform = 'rotate(' + (a.track || 0) + 'deg)'; el.style.color = planeColor(a); }
+          } else {
+            var m = L.marker([a.lat, a.lon], {
+              icon: L.divIcon({ className: '', html: planeHtml(a), iconSize: [22, 22] }), keyboard: false
+            });
+            p = planes[a.hex] = { m: m, a: a, t: t };
+            m.bindTooltip(function () { return esc(((p.a.flight || '').trim() || p.a.r || 'Avião') +
+              (altM(p.a) !== null ? ' · ' + Math.round(altM(p.a)) + ' m' : '')); }, { direction: 'top', offset: [0, -10] });
+            m.bindPopup(function () { return planeInfo(p.a); });
+            m.addTo(planeLayer);
+          }
+        });
+        for (var hx in planes) if (!seen[hx]) { planeLayer.removeLayer(planes[hx].m); delete planes[hx]; }
+        planeLabel(n);
+        refreshExplore();
+      })
+      .catch(function (e) { planeLabel('sem dados'); if (e instanceof TypeError) serverDown(); })
+      .then(function () { planeBusy = false; });
+  }
+  setInterval(loadPlanes, 10000);
+  map.on('moveend', function () { if (map.hasLayer(planeLayer)) loadPlanes(); });
+
+  // anda com cada avião 1x por segundo (estimativa até chegar a próxima posição real)
+  setInterval(function () {
+    if (!map.hasLayer(planeLayer)) return;
+    var now = Date.now();
+    for (var hx in planes) {
+      var p = planes[hx], a = p.a;
+      if (!a.gs || altM(a) === null) continue;
+      var dt = Math.min((now - p.t) / 1000, 60);
+      var d = a.gs * 0.514444 * dt / 6371000, brg = (a.track || 0) * Math.PI / 180;
+      var la1 = a.lat * Math.PI / 180, lo1 = a.lon * Math.PI / 180;
+      var la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(brg));
+      var lo2 = lo1 + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+      p.m.setLatLng([la2 * 180 / Math.PI, lo2 * 180 / Math.PI]);
+    }
+  }, 1000);
+
+  // ---------- YouTube ao vivo ----------
+  // O servidor.py busca câmeras ao vivo por palavras em vários idiomas e descobre onde
+  // fica cada uma (localização do vídeo ou pelo título). A chave do Google fica lá.
+  var ytLayer = L.layerGroup();
+  var ytIcon = L.divIcon({ className: '', html: '<div class="yt-icon"></div>', iconSize: [20, 14] });
+  var ytVideos = {}, ytTimer = null, ytAsked = false, ytBusy = false;
+  function ytLabel(t) { $('ytBtn').textContent = '📺 YouTube' + (t === undefined ? '' : ' (' + t + ')'); }
+
+  function openYT(v) {
+    current = 'yt:' + v.id;
+    $('pTitle').textContent = v.titulo;
+    $('pWhere').textContent = v.canal + (v.assistindo ? ' · ' + v.assistindo.toLocaleString('pt-BR') + ' assistindo agora' : '') +
+      (v.origem === 'titulo' ? ' · local estimado pelo título' : '');
+    $('tabs').innerHTML = '';
+    $('playerWrap').innerHTML = '<iframe allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen ' +
+      'src="https://www.youtube.com/embed/' + encodeURIComponent(v.id) + '?autoplay=1&playsinline=1"></iframe>';
+    $('pLinks').innerHTML = '<a href="https://www.youtube.com/watch?v=' + encodeURIComponent(v.id) +
+      '" target="_blank" rel="noopener">Abrir no YouTube ↗</a>';
+    $('panel').classList.add('open');
+    renderHere($('here'), v.lat, v.lon, null);
+  }
+
+  function ytListHtml(list) {
+    return '<div class="rlist ylist">' + list.map(function (v) {
+      return '<button data-yt="' + esc(v.id) + '"><img alt="" src="' + esc(v.thumb) + '"><span class="nm">' + esc(v.titulo) +
+        ' <small>' + (v.assistindo ? v.assistindo.toLocaleString('pt-BR') + ' assistindo' : esc(v.canal)) + '</small></span></button>';
+    }).join('') + '</div>';
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-yt]');
+    if (b && ytVideos[b.getAttribute('data-yt')]) { map.closePopup(); openYT(ytVideos[b.getAttribute('data-yt')]); }
+  });
+  // transmissões já carregadas a até 150 km de um ponto (não gasta cota)
+  function ytNear(lat, lng) {
+    var p = L.latLng(lat, lng), out = [];
+    for (var id in ytVideos) {
+      var v = ytVideos[id], d = p.distanceTo([v.lat, v.lon]);
+      if (d < 150000) out.push({ v: v, d: d });
+    }
+    return out.sort(function (a, b) { return a.d - b.d; }).slice(0, 5).map(function (x) { return x.v; });
+  }
+
+  function askYTKey() {
+    $('ytInput').value = '';
+    $('ytDlg').classList.add('open');
+    $('ytInput').focus();
+  }
+  $('ytCancel').onclick = function () {   // "agora não": desliga a camada até você ligar de novo
+    $('ytDlg').classList.remove('open');
+    if (map.hasLayer(ytLayer)) $('ytBtn').click();
+  };
+  $('ytSave').onclick = function () {
+    var k = $('ytInput').value.trim();
+    if (!k) return;
+    fetch('/api/chave-youtube', { method: 'POST', body: k }).then(function () {
+      $('ytDlg').classList.remove('open');
+      loadYT();
+    });
+  };
+  $('ytInput').onkeydown = function (e) { if (e.key === 'Enter') $('ytSave').click(); };
+
+  // A lista vem pronta do servidor (renovada a cada 6 h). Enquanto ele ainda está
+  // descobrindo onde fica cada transmissão, perguntamos de novo a cada 20 s.
+  function ytCount() {
+    var vb = map.getBounds(), visible = 0;
+    for (var id in ytVideos) if (vb.contains([ytVideos[id].lat, ytVideos[id].lon])) visible++;
+    ytLabel(visible);
+  }
+  function loadYT() {
+    clearTimeout(ytTimer);
+    if (!map.hasLayer(ytLayer) || ytBusy) return;
+    if (!SERVED) { ytLabel('abra pelo .bat'); return; }
+    ytBusy = true;
+    fetch('/api/youtube')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.erro === 'sem-chave') { ytLabel('sem chave'); if (!ytAsked) { ytAsked = true; askYTKey(); } return; }
+        if (d.erro === 'chave') { ytLabel('chave inválida'); askYTKey(); return; }
+        if (d.erro === 'api-desativada') { ytLabel('ative a API'); askYTKey(); return; }
+        (d.videos || []).forEach(function (v) {
+          if (ytVideos[v.id]) return;
+          ytVideos[v.id] = v;
+          L.marker([v.lat, v.lon], { icon: ytIcon, title: v.titulo })
+            .bindTooltip('📺 ' + esc(v.titulo), { direction: 'top', offset: [0, -8] })
+            .on('click', function () { openYT(v); })
+            .addTo(ytLayer);
+        });
+        if (d.processando && !d.videos.length) ytLabel('procurando…'); else ytCount();
+        refreshExplore();
+        $('ytBtn').title = 'Câmeras ao vivo do YouTube · ' + d.videos.length + ' no mapa' +
+          (d.sem_lugar ? ', ' + d.sem_lugar + ' sem lugar conhecido' : '') +
+          (d.processando ? ' · ainda localizando…' : '') +
+          (d.erro === 'cota' ? ' · cota do dia esgotada' : '') +
+          ' · cota usada hoje: ' + d.unidades + ' de ' + d.cota;
+        ytTimer = setTimeout(loadYT, d.processando ? 20000 : 30 * 60000);
+      })
+      .catch(function () { ytLabel('erro'); serverDown(); ytTimer = setTimeout(loadYT, 60000); })
+      .then(function () { ytBusy = false; });
+  }
+  map.on('moveend', function () { if (map.hasLayer(ytLayer) && !ytBusy && Object.keys(ytVideos).length) ytCount(); });
+
+  // ---------- câmeras de trânsito da CET-SP ----------
+  // Cada câmera guarda as últimas 25–50 fotos (1.jpg … n.jpg), renovadas o tempo todo;
+  // passando por elas em sequência, como faz o site da CET, a imagem fica quase em vídeo.
+  var cetLayer = L.layerGroup(), cetLoaded = false, cetTimer = null, cetCams = [];
+  function cetIcon(c) {
+    return L.divIcon({ className: '', html: '<div class="cet-icon' + (c.ativa ? '' : ' off') + '">C</div>', iconSize: [16, 16] });
+  }
+  function openCET(c) {
+    clearInterval(cetTimer);
+    var id = 'cet:' + c.pasta;
+    current = id;
+    $('pTitle').textContent = c.titulo + ' × ' + c.sub;
+    $('pWhere').textContent = 'Câmera de trânsito CET-SP' + (c.detalhe ? ' · ' + c.detalhe : '') +
+      (c.aprox ? ' · posição aproximada' : '');
+    $('tabs').innerHTML = '';
+    $('pLinks').innerHTML = '<a href="https://cameras.cetsp.com.br/View/Cam.aspx" target="_blank" rel="noopener">Site de câmeras da CET ↗</a>';
+    $('panel').classList.add('open');
+    renderHere($('here'), c.lat, c.lon, { city: 'São Paulo', state: 'São Paulo', cc: 'BR', country: 'Brasil' });
+    if (!c.ativa) {
+      $('playerWrap').innerHTML = '<div style="padding:24px;color:#9aa5b5">A CET desligou esta câmera no momento ' +
+        '(ela costuma tirar a imagem do ar em acidentes graves). Tente mais tarde.</div>';
+      return;
+    }
+    $('playerWrap').innerHTML = '<img alt="" id="cetImg">';
+    var k = Math.floor(new Date().getSeconds() / 60 * c.n);   // mesmo ponto de partida que o site usa
+    function next() {
+      if (current !== id) { clearInterval(cetTimer); return; }
+      k = k % c.n + 1;
+      var img = new Image();
+      img.onload = function () { var el = $('cetImg'); if (el && current === id) el.src = img.src; };
+      img.src = c.base + k + '.jpg?' + Date.now();
+    }
+    next();
+    cetTimer = setInterval(next, 1200);
+  }
+  function loadCET() {
+    if (!map.hasLayer(cetLayer) || cetLoaded) return;
+    if (!SERVED) { $('cetBtn').textContent = '🚦 CET (abra pelo .bat)'; return; }
+    fetch('/api/cet').then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.cameras) throw new Error(d.erro);
+      cetLoaded = true;
+      cetCams = d.cameras;
+      d.cameras.forEach(function (c) {
+        L.marker([c.lat, c.lon], { icon: cetIcon(c) })
+          .bindTooltip('🚦 ' + esc(c.titulo + ' × ' + c.sub) + (c.ativa ? '' : ' (desligada)'), { direction: 'top', offset: [0, -9] })
+          .on('click', function () { openCET(c); })
+          .addTo(cetLayer);
+      });
+      $('cetBtn').textContent = '🚦 CET (' + d.cameras.length + ')';
+      if (cat === 'cet') fitAll(cetCams);
+      refreshExplore();
+    }).catch(function () { $('cetBtn').textContent = '🚦 CET (erro)'; serverDown(); });
+  }
+
+  // ---------- navios (AIS) ----------
+  // Vêm da AISStream.io pelo servidor.py (navios.py), que assina só a área da tela.
+  // Como nos aviões, entre uma consulta e outra cada navio anda pela velocidade e rumo.
+  var shipLayer = L.layerGroup(), ships = {}, shipBusy = false, shipAsked = false;
+  var SHIP_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" d="M12 1.5l5 7v13.5H7V8.5z"/></svg>';
+  function shipKind(t) {
+    if (!t) return ['tipo ainda desconhecido', '#3d4f73'];
+    if (t === 30) return ['Pesca', '#ff9f43'];
+    if (t === 31 || t === 32 || t === 52) return ['Rebocador', '#d9a066'];
+    if (t === 35) return ['Militar', '#8a9a5b'];
+    if (t === 36) return ['Veleiro', '#c779ff'];
+    if (t === 37) return ['Recreio', '#c779ff'];
+    if (t >= 40 && t <= 49) return ['Alta velocidade', '#ffd54a'];
+    if (t >= 50 && t <= 59) return ['Serviço / prático / resgate', '#ffd54a'];
+    if (t >= 60 && t <= 69) return ['Passageiros', '#4aa3ff'];
+    if (t >= 70 && t <= 79) return ['Carga', '#2ecc71'];
+    if (t >= 80 && t <= 89) return ['Petroleiro / tanque', '#ff4d4d'];
+    return ['Outro', '#3d4f73'];
+  }
+  function shipDir(a) { return a.rumo != null && a.rumo < 360 ? a.rumo : (a.cog || 0); }
+  function shipName(a) { return a.nome || 'MMSI ' + a.mmsi; }
+  function shipInfo(a) {
+    var k = shipKind(a.tipo), vel = a.sog != null ? (a.sog * 1.852).toFixed(1).replace('.', ',') + ' km/h' : '—';
+    return '<div class="pinfo"><b>🚢 ' + esc(shipName(a)) + '</b>' +
+      '<div class="row">' + esc(k[0]) + (a.comp ? ' · ' + a.comp + ' m' : '') + (a.destino ? ' · destino: ' + esc(a.destino) : '') + '</div>' +
+      '<div class="row">' + (a.sog != null && a.sog < 0.5 ? 'parado' : vel + ' · rumo ' + Math.round(shipDir(a)) + '°') + '</div>' +
+      '<div class="row" style="margin-top:6px"><a href="https://www.vesselfinder.com/vessels/details/' + encodeURIComponent(a.mmsi) +
+      '" target="_blank" rel="noopener">Ver no VesselFinder ↗</a><a href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:' +
+      encodeURIComponent(a.mmsi) + '" target="_blank" rel="noopener">MarineTraffic ↗</a></div></div>';
+  }
+  function shipLabel(t) { $('shipBtn').textContent = '🚢 Navios' + (t === undefined ? '' : ' (' + t + ')'); }
+  function askShipKey() { $('shipInput').value = ''; $('shipDlg').classList.add('open'); $('shipInput').focus(); }
+  $('shipCancel').onclick = function () { $('shipDlg').classList.remove('open'); if (map.hasLayer(shipLayer)) $('shipBtn').click(); };
+  $('shipSave').onclick = function () {
+    var k = $('shipInput').value.trim();
+    if (!k) return;
+    fetch('/api/chave-navios', { method: 'POST', body: k }).then(function () {
+      $('shipDlg').classList.remove('open'); shipAsked = false; loadShips();
+    });
+  };
+  $('shipInput').onkeydown = function (e) { if (e.key === 'Enter') $('shipSave').click(); };
+
+  function loadShips() {
+    if (!map.hasLayer(shipLayer) || shipBusy || document.hidden) return;
+    if (!SERVED) { shipLabel('abra pelo .bat'); return; }
+    if (map.getZoom() < 7) { shipLabel('aproxime'); return; }
+    var b = map.getBounds();
+    var w = L.Util.wrapNum(b.getWest(), [-180, 180], true), e = Math.min(180, w + Math.min(b.getEast() - b.getWest(), 359));
+    shipBusy = true;
+    fetch('/api/navios?s=' + b.getSouth().toFixed(3) + '&w=' + w.toFixed(3) + '&n=' + b.getNorth().toFixed(3) + '&e=' + e.toFixed(3))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.erro === 'sem-chave') { shipLabel('sem chave'); if (!shipAsked) { shipAsked = true; askShipKey(); } return; }
+        if (d.erro === 'chave') { shipLabel('chave recusada'); if (!shipAsked) { shipAsked = true; askShipKey(); } return; }
+        var now = Date.now(), seen = {}, n = 0;
+        (d.navios || []).forEach(function (a) {
+          seen[a.mmsi] = 1; n++;
+          var t = now - (d.agora - a.t) * 1000, p = ships[a.mmsi], cor = shipKind(a.tipo)[1];
+          if (p) {
+            p.a = a; p.t = t;
+            p.m.setLatLng([a.lat, a.lon]);
+            var el = p.m.getElement() && p.m.getElement().firstChild;
+            if (el) { el.style.transform = 'rotate(' + shipDir(a) + 'deg)'; el.style.color = cor; }
+          } else {
+            var m = L.marker([a.lat, a.lon], { keyboard: false, icon: L.divIcon({ className: '', iconSize: [22, 22],
+              html: '<div class="ship" style="color:' + cor + ';transform:rotate(' + shipDir(a) + 'deg)">' + SHIP_SVG + '</div>' }) });
+            p = ships[a.mmsi] = { m: m, a: a, t: t };
+            m.bindTooltip(function () { return esc(shipName(p.a)); }, { direction: 'top', offset: [0, -9] });
+            m.bindPopup(function () { return shipInfo(p.a); });
+            m.addTo(shipLayer);
+          }
+        });
+        var vb = map.getBounds();
+        for (var id in ships) if (!seen[id] && vb.contains(ships[id].m.getLatLng())) {
+          shipLayer.removeLayer(ships[id].m); delete ships[id];
+        }
+        shipLabel(n || (d.estado === 'recebendo' ? 'aguardando sinais…' : 'conectando…'));
+        refreshExplore();
+      })
+      .catch(function (e) { shipLabel('erro'); if (e instanceof TypeError) serverDown(); })
+      .then(function () { shipBusy = false; });
+  }
+  setInterval(loadShips, 10000);
+  map.on('moveend', function () { if (map.hasLayer(shipLayer)) setTimeout(loadShips, 400); });
+  setInterval(function () {   // anda com cada navio (estimativa até a próxima posição real)
+    if (!map.hasLayer(shipLayer)) return;
+    var now = Date.now();
+    for (var id in ships) {
+      var p = ships[id], a = p.a;
+      if (!a.sog || a.sog < 0.5 || a.cog == null) continue;
+      var dt = Math.min((now - p.t) / 1000, 600);
+      var d = a.sog * 0.514444 * dt / 6371000, brg = a.cog * Math.PI / 180;
+      var la1 = a.lat * Math.PI / 180, lo1 = a.lon * Math.PI / 180;
+      var la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(brg));
+      var lo2 = lo1 + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+      p.m.setLatLng([la2 * 180 / Math.PI, lo2 * 180 / Math.PI]);
+    }
+  }, 2000);
+
+  // ---------- aeroportos e portos com câmera ----------
+  // Para ver na câmera o mesmo avião ou navio que aparece no mapa: câmeras da Windy das
+  // categorias "airport" e "port" e transmissões do YouTube com aeroporto/porto no título.
+  // Ao escolher esta categoria, aviões e navios ficam ligados junto.
+  var spotLayer = L.layerGroup(), spots = {}, spotTimer = null, spotGlobal = false, spotYT = false;
+  var RE_AERO = /airport|aeroporto|aeropuerto|a[ée]roport|flughafen|luchthaven|plane ?spott|runway|aviões ao vivo|\bSB[A-Z]{2}\b/i;
+  var RE_PORTO = /\bport\b|\bporto d[eo]\b|\bpuerto de\b|harbou?r(?! view)|hafen|ship ?spott|navios|cruise|ferry|balsa|estu[aá]rio/i;   // sem 'Puerto Vallarta', 'Porto Moniz'...
+  function spotIcon(kind) {
+    return L.divIcon({ className: '', iconSize: [24, 24],
+      html: '<div class="spot-icon ' + kind + '">' + (kind === 'airport' ? '✈' : '⚓') + '</div>' });
+  }
+  function addSpot(key, s) {
+    if (spots[key]) return;
+    spots[key] = s;
+    L.marker([s.lat, s.lon], { icon: spotIcon(s.kind) })
+      .bindTooltip((s.kind === 'airport' ? '🛫 ' : '⚓ ') + esc(s.title), { direction: 'top', offset: [0, -10] })
+      .on('click', function () { openSpot(s); })
+      .addTo(spotLayer);
+  }
+  function openSpot(s) {
+    map.closePopup();
+    setTimeout(s.open, irPara(s.lat, s.lon, Math.max(map.getZoom(), s.kind === 'airport' ? 11 : 12)) ? 2500 : 300);
+  }
+  function windySpots(query, kind) {
+    return api('/webcams?categories=' + kind + '&limit=50&include=location&' + query).then(function (d) {
+      (d.webcams || []).forEach(function (c) {
+        var l = c.location || {};
+        if (l.latitude == null) return;
+        addSpot('w' + c.webcamId, { kind: kind, src: 'Windy', title: c.title, lat: l.latitude, lon: l.longitude,
+          sub: [l.city, l.country].filter(Boolean).join(', '), open: function () { openCam(c.webcamId, c); } });
+      });
+    });
+  }
+  function loadSpots() {
+    if (!map.hasLayer(spotLayer)) return;
+    var jobs = [];
+    if (!key()) {}        // sem a chave da Windy ainda: por enquanto só o YouTube
+    else if (!spotGlobal) {   // uma vez: as mais vistas do mundo, para a lista nunca ficar vazia
+      spotGlobal = true;
+      jobs.push(windySpots('sortKey=popularity&sortDirection=desc', 'airport'), windySpots('sortKey=popularity&sortDirection=desc', 'port'));
+    }
+    if (key() && map.getZoom() >= 6) {   // e as que estão perto do centro do mapa (raio máx. da Windy: 250 km)
+      var c = map.getCenter(), r = Math.min(250, Math.ceil(c.distanceTo(map.getBounds().getNorthEast()) / 1000));
+      var q = 'nearby=' + c.lat.toFixed(3) + ',' + L.Util.wrapNum(c.lng, [-180, 180], true).toFixed(3) + ',' + r;
+      jobs.push(windySpots(q, 'airport'), windySpots(q, 'port'));
+    }
+    if (SERVED && !spotYT) {
+      jobs.push(fetch('/api/youtube').then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.videos) return;
+        spotYT = !d.processando;
+        d.videos.forEach(function (v) {
+          var kind = RE_AERO.test(v.titulo) ? 'airport' : RE_PORTO.test(v.titulo) ? 'port' : null;
+          if (!kind) return;
+          ytVideos[v.id] = ytVideos[v.id] || v;
+          addSpot('y' + v.id, { kind: kind, src: 'YouTube', title: v.titulo, lat: v.lat, lon: v.lon, img: v.thumb,
+            sub: (v.assistindo ? v.assistindo.toLocaleString('pt-BR') + ' assistindo · ' : '') + v.canal,
+            open: function () { openYT(v); } });
+        });
+      }));
+    }
+    Promise.all(jobs.map(function (j) { return j.catch(function () {}); })).then(refreshExplore);
+  }
+  map.on('moveend', function () {
+    clearTimeout(spotTimer);
+    if (map.hasLayer(spotLayer)) spotTimer = setTimeout(loadSpots, 1500);
+  });
+
+  // ---------- São Paulo agora / Meu bairro agora ----------
+  // Dados do servidor (cidade.py): alagamentos do CGE, helicópteros (e se estão circulando)
+  // e ônibus da SPTrans. Mais: câmeras da CET (desligada costuma ser acidente grave) e o tempo.
+  var cityLayer = L.layerGroup(), homeLayer = L.layerGroup();
+  var city = null, cityBusy = false, cityTimer = null, spAsked = false;
+  var casa = null;
+  try { casa = JSON.parse(store('cameraweb.casa') || 'null'); } catch (e) {}
+  var HELI_SVG = '<svg viewBox="0 0 24 24"><path fill="currentColor" stroke="#000" stroke-width=".6" d="M2 4h20v1.6H2zM11.2 5.6h1.6v2.2h-1.6zM12 7.6c3 0 5 2 5 4.6 0 2.2-1.6 3.8-3.8 4.2l.3 4.2h2.7v1.4H7.8v-1.4h2.7l.3-4.2C8.6 16 7 14.4 7 12.2c0-2.6 2-4.6 5-4.6z"/></svg>';
+  var raioCasa = function () { return (casa && casa.raio) || 3000; };
+
+  function cityIcon(html, size) { return L.divIcon({ className: '', html: html, iconSize: [size, size] }); }
+  function desenharCidade() {
+    cityLayer.clearLayers();
+    if (!city) return;
+    city.alagamentos.forEach(function (a) {
+      if (a.lat == null) return;
+      var cor = !a.ativo ? '#9aa5b5' : a.transitavel ? '#ffb03c' : '#ff3b3b';
+      L.circleMarker([a.lat, a.lon], { radius: a.ativo ? 9 : 5, color: '#fff', weight: 2, fillColor: cor, fillOpacity: .95 })
+        .bindTooltip('💧 ' + esc(a.rua) + ' — ' + (a.ativo ? (a.transitavel ? 'alagado, transitável' : 'ALAGADO, intransitável') : 'alagamento já encerrado') +
+          '<br><small>' + esc(a.horario + ' · ' + a.bairro + ' · sentido ' + a.sentido + ' · ref. ' + a.ref) + ' (posição aproximada)</small>')
+        .addTo(cityLayer);
+    });
+    city.helicopteros.forEach(function (h) {
+      L.polyline(h.rastro, { color: h.circulando ? '#ff3b3b' : '#ffd54a', weight: 2, opacity: .7, dashArray: '4 4', interactive: false }).addTo(cityLayer);
+      if (h.circulando) L.circle([h.circulando.lat, h.circulando.lon], { radius: Math.max(h.circulando.raio, 400), color: '#ff3b3b',
+        weight: 2, fillOpacity: .12, className: 'pulsa' }).addTo(cityLayer);
+      L.marker([h.lat, h.lon], { icon: cityIcon('<div class="heli' + (h.circulando ? ' alerta' : '') + '" style="transform:rotate(' + (h.rumo || 0) + 'deg)">' + HELI_SVG + '</div>', 26) })
+        .bindTooltip('🚁 ' + esc(h.nome) + (h.modelo ? ' · ' + esc(h.modelo) : '') + (h.alt ? ' · ' + Math.round(h.alt * 0.3048) + ' m' : '') +
+          (h.circulando ? '<br><b>circulando</b>: ' + h.circulando.voltas + ' voltas num raio de ' + h.circulando.raio + ' m' : ''))
+        .addTo(cityLayer);
+    });
+    var o = city.onibus || {};
+    (o.trechos_parados || []).forEach(function (t) {
+      L.circle([t.lat, t.lon], { radius: 300, color: '#ff3b3b', weight: 2, fillColor: '#ff3b3b', fillOpacity: .25 })
+        .bindTooltip('🚌 ' + t.onibus + ' ônibus de ' + t.linhas.length + ' linhas parados há mais de 4 min<br><small>' + esc(t.linhas.join(', ')) + '</small>')
+        .addTo(cityLayer);
+    });
+    // no "Meu bairro", os ônibus aparecem um a um, coloridos pela velocidade
+    if (cat === 'bairro' && casa && o.pontos) {
+      var c = L.latLng(casa.lat, casa.lon), rend = L.canvas({ padding: .3 });
+      o.pontos.forEach(function (p) {
+        if (c.distanceTo([p[0], p[1]]) > raioCasa()) return;
+        var cor = p[2] == null ? '#9aa5b5' : p[2] < 3 ? '#ff3b3b' : p[2] < 12 ? '#ffb03c' : '#2ecc71';
+        L.circleMarker([p[0], p[1]], { renderer: rend, radius: 4, weight: 1, color: '#000', fillColor: cor, fillOpacity: .9 })
+          .bindTooltip('🚌 ' + esc(p[3]) + (p[2] == null ? '' : ' · ' + p[2] + ' km/h')).addTo(cityLayer);
+      });
+    }
+  }
+  function desenharCasa() {
+    homeLayer.clearLayers();
+    if (!casa) return;
+    L.circle([casa.lat, casa.lon], { radius: raioCasa(), color: '#7b4dff', weight: 2, dashArray: '6 6', fillOpacity: .04, interactive: false }).addTo(homeLayer);
+    L.marker([casa.lat, casa.lon], { icon: cityIcon('<div class="casa">📍</div>', 28), interactive: false }).addTo(homeLayer);
+  }
+
+  function loadCity() {
+    clearTimeout(cityTimer);
+    // com um bairro marcado, a cidade é consultada sempre (para o alerta tocar mesmo em outra categoria)
+    if (!map.hasLayer(cityLayer) && !casa) return;
+    if (!SERVED) { renderExplore(); return; }
+    if (cityBusy) return;
+    cityBusy = true;
+    fetch('/api/cidade').then(function (r) { return r.json(); }).then(function (d) {
+      city = d;
+      if (casa && !cetLoaded && !cetCams.length)   // a lista da CET também entra no alerta do bairro
+        fetch('/api/cet').then(function (r) { return r.json(); }).then(function (x) { if (!cetCams.length) cetCams = x.cameras || []; }).catch(function () {});
+      if (d.onibus && d.onibus.erro === 'sem-token' && !spAsked && store('cameraweb.sptransNao') !== '1') { spAsked = true; }
+      desenharCidade();
+      if (casa) avaliarBairro();
+      refreshExplore();
+    }).catch(function (e) { if (e instanceof TypeError) serverDown(); })
+      .then(function () { cityBusy = false; cityTimer = setTimeout(loadCity, 20000); });
+  }
+
+  // ---------- o que está acontecendo perto de casa ----------
+  function sinaisPerto(lat, lon, raio) {
+    var c = L.latLng(lat, lon), s = [];
+    if (city) {
+      city.alagamentos.forEach(function (a) {
+        if (a.ativo && a.lat != null && c.distanceTo([a.lat, a.lon]) <= raio + 300)
+          s.push({ fonte: 'alagamento', ic: '💧', txt: (a.transitavel ? 'Alagamento (transitável): ' : 'Alagamento INTRANSITÁVEL: ') + a.rua + ' (' + a.horario + ')', lat: a.lat, lon: a.lon });
+      });
+      city.helicopteros.forEach(function (h) {
+        if (h.circulando && c.distanceTo([h.circulando.lat, h.circulando.lon]) <= raio + 1000)
+          s.push({ fonte: 'helicóptero', ic: '🚁', txt: 'Helicóptero ' + h.nome + ' circulando (' + h.circulando.voltas + ' voltas, raio ' + h.circulando.raio + ' m)', lat: h.circulando.lat, lon: h.circulando.lon });
+      });
+      ((city.onibus || {}).trechos_parados || []).forEach(function (t) {
+        if (c.distanceTo([t.lat, t.lon]) <= raio)
+          s.push({ fonte: 'ônibus', ic: '🚌', txt: t.onibus + ' ônibus de ' + t.linhas.length + ' linhas parados há 4+ min', lat: t.lat, lon: t.lon });
+      });
+    }
+    if (city && city.cge) {   // subprefeitura mais próxima do ponto em atenção/alerta no CGE
+      var maisPerto = null;
+      city.cge.regioes.forEach(function (r) {
+        if (r.lat == null) return;
+        var d = c.distanceTo([r.lat, r.lon]);
+        if (d < 6000 && (!maisPerto || d < maisPerto.d)) maisPerto = { r: r, d: d };
+      });
+      if (maisPerto) s.push({ fonte: 'CGE', ic: '🌧️', txt: 'Subprefeitura ' + maisPerto.r.nome + ' em ' + maisPerto.r.estado + ' para alagamentos (CGE)', lat: maisPerto.r.lat, lon: maisPerto.r.lon });
+    }
+    cetCams.forEach(function (k) {
+      if (!k.ativa && c.distanceTo([k.lat, k.lon]) <= raio)
+        s.push({ fonte: 'câmera CET', ic: '🚦', txt: 'Câmera da CET desligada: ' + k.titulo + ' × ' + k.sub + ' (a CET tira do ar em acidentes graves)', lat: k.lat, lon: k.lon, cet: k });
+    });
+    return s;
+  }
+  var ultimoAlerta = '';
+  function avaliarBairro() {
+    if (!casa) return;
+    var s = sinaisPerto(casa.lat, casa.lon, raioCasa());
+    var fontes = {};
+    s.forEach(function (x) { fontes[x.fonte] = 1; });
+    var n = Object.keys(fontes).length;
+    var assinatura = n >= 2 ? Object.keys(fontes).sort().join('+') : '';
+    if (assinatura && assinatura !== ultimoAlerta) {
+      ultimoAlerta = assinatura;
+      apito();
+      try {
+        if (window.Notification && Notification.permission === 'granted')
+          new Notification('Algo acontecendo perto de você', { body: s.map(function (x) { return x.ic + ' ' + x.txt; }).join('\n') });
+      } catch (e) {}
+    }
+    if (!assinatura) ultimoAlerta = '';
+    return { sinais: s, fontes: n };
+  }
+  function apito() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.25].forEach(function (t) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.18, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.22);
+      });
+    } catch (e) {}
+  }
+
+  // marcar a casa: clique no mapa ou localização do aparelho
+  var marcando = false;
+  function marcarCasa(lat, lon) {
+    casa = { lat: lat, lon: lon, raio: raioCasa() };
+    store('cameraweb.casa', JSON.stringify(casa));
+    marcando = false;
+    $('map').style.cursor = '';
+    desenharCasa();
+    irPara(lat, lon, 14);
+    if (window.Notification && Notification.permission === 'default') try { Notification.requestPermission(); } catch (e) {}
+    loadCity();
+    refreshExplore();
+  }
+  map.on('click', function (e) {
+    if (!marcando) return;
+    marcarCasa(e.latlng.lat, L.Util.wrapNum(e.latlng.lng, [-180, 180], true));
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-casa]');
+    if (!b) return;
+    var acao = b.getAttribute('data-casa');
+    if (acao === 'clicar') { marcando = true; $('map').style.cursor = 'crosshair'; b.textContent = '👆 Agora clique no mapa…'; }
+    if (acao === 'gps' && navigator.geolocation) navigator.geolocation.getCurrentPosition(function (p) {
+      marcarCasa(p.coords.latitude, p.coords.longitude);
+    }, function () { b.textContent = 'Não consegui a localização — clique no mapa'; });
+    if (acao === 'raio') { casa.raio = +b.getAttribute('data-r'); store('cameraweb.casa', JSON.stringify(casa)); desenharCasa(); desenharCidade(); refreshExplore(); }
+    if (acao === 'ir') irPara(casa.lat, casa.lon, 14);
+    if (acao === 'ver') { var x = +b.getAttribute('data-lat'), y = +b.getAttribute('data-lon'); irPara(x, y, 16); }
+    if (acao === 'sptrans') askSPTrans();
+  });
+
+  // token da SPTrans (ônibus)
+  function askSPTrans() { $('spInput').value = ''; $('spDlg').classList.add('open'); $('spInput').focus(); }
+  $('spCancel').onclick = function () { $('spDlg').classList.remove('open'); store('cameraweb.sptransNao', '1'); };
+  $('spSave').onclick = function () {
+    var k = $('spInput').value.trim();
+    if (!k) return;
+    fetch('/api/chave-sptrans', { method: 'POST', body: k }).then(function () { $('spDlg').classList.remove('open'); setTimeout(loadCity, 1500); });
+  };
+  $('spInput').onkeydown = function (e) { if (e.key === 'Enter') $('spSave').click(); };
+
+  // ---------- os painéis ----------
+  var climaSP = null, climaCasa = null, climaT = 0;
+  function atualizarClima() {
+    if (Date.now() - climaT < 10 * 60000) return;
+    climaT = Date.now();
+    weather(-23.55, -46.63).then(function (w) { climaSP = w; refreshExplore(); }).catch(function () {});
+    if (casa) weather(casa.lat, casa.lon).then(function (w) { climaCasa = w; refreshExplore(); }).catch(function () {});
+  }
+  function card(ic, titulo, valor, detalhe, nivel) {
+    return '<div class="sp-card ' + (nivel || '') + '"><div class="sp-ic">' + ic + '</div><div><div class="sp-t">' + titulo +
+      '</div><div class="sp-v">' + valor + '</div>' + (detalhe ? '<div class="sp-d">' + detalhe + '</div>' : '') + '</div></div>';
+  }
+  // cartões das fontes da cidade inteira (usados nos dois painéis)
+  var LINHA_RUIM = { OperacaoParcial: 1, OperacaoDiferenciada: 1, OperacaoTransitoria: 1, VelocidadeReduzida: 1, Paralisada: 1, OperacaoInterrompida: 1 };
+  function cardLinhas(soProblemas) {
+    var ls = (city && city.linhas) || [];
+    if (!ls.length) return '';
+    var ruins = ls.filter(function (l) { return LINHA_RUIM[l.codigo] || /parcial|reduzida|paralis|interromp/i.test(l.status || ''); });
+    if (soProblemas && !ruins.length) return '';
+    var chips = (soProblemas ? ruins : ls).map(function (l) {
+      var ruim = ruins.indexOf(l) >= 0, fechada = l.codigo === 'OperacaoEncerrada';
+      return '<span class="linha' + (ruim ? ' ruim' : '') + (fechada ? ' fechada' : '') + '" title="' + esc(l.nome + ' — ' + l.status + (l.descricao && l.descricao !== l.status ? ': ' + l.descricao : '')) +
+        '"><b style="background:' + esc(l.cor || '#666') + '">' + esc(l.numero) + '</b>' + esc(ruim || fechada ? l.status : 'ok') + '</span>';
+    }).join('');
+    return card('🚇', 'Metrô e trens', ruins.length ? ruins.length + ' linha' + (ruins.length > 1 ? 's' : '') + ' com problema' : 'todas operando',
+      '<div class="linhas">' + chips + '</div>' + (ruins.length ? '<div style="margin-top:4px">' + ruins.map(function (l) {
+        return '<b>' + esc(l.numero + ' ' + l.nome) + ':</b> ' + esc(l.descricao || l.status); }).join('<br>') + '</div>' : ''), ruins.length ? 'medio' : '');
+  }
+  function avisosAgora() {
+    var agora = new Date(), txt = agora.getFullYear() + '-' + ('0' + (agora.getMonth() + 1)).slice(-2) + '-' + ('0' + agora.getDate()).slice(-2) +
+      ' ' + ('0' + agora.getHours()).slice(-2) + ':' + ('0' + agora.getMinutes()).slice(-2);
+    return ((city && city.avisos) || []).filter(function (a) { return a.inicio <= txt && a.fim >= txt; });
+  }
+  function cardAvisos() {
+    var at = avisosAgora(), prox = ((city && city.avisos) || []).length - at.length;
+    if (!at.length && !prox) return card('⛈️', 'Avisos do INMET', 'nenhum para a capital', '');
+    var grave = at.some(function (a) { return /grande/i.test(a.severidade); }) ? 'alto' : at.some(function (a) { return /^perigo$/i.test(a.severidade); }) ? 'medio' : '';
+    return card('⛈️', 'Avisos do INMET', at.length ? at.map(function (a) { return esc(a.evento + ' (' + a.severidade + ')'); }).join(' · ') : 'nenhum agora',
+      (at.length ? 'até ' + esc(at[0].fim.slice(8, 10) + '/' + at[0].fim.slice(5, 7) + ' ' + at[0].fim.slice(11)) + (at[0].riscos ? '<br>' + esc(at[0].riscos.slice(0, 220)) : '') : '') +
+      (prox ? '<br>' + prox + ' aviso(s) para os próximos dias' : ''), grave);
+  }
+  function cardCGE() {
+    var g = city && city.cge;
+    if (!g) return '';
+    return card('🌧️', 'Alagamentos — estado do CGE', g.estado, g.regioes.length ? g.regioes.map(function (r) { return esc(r.nome + ': ' + r.estado); }).join(' · ')
+      : 'todas as subprefeituras em observação (normal)', g.nivel >= 3 ? 'alto' : g.nivel ? 'medio' : '');
+  }
+  function cardCET() {
+    var t = city && city.cet;
+    if (!t) return '';
+    var z = t.zonas, oc = t.onibus_corredores || {};
+    return card('🚗', 'Trânsito (CET)', t.total + ' km de lentidão' + (t.rodizio && t.rodizio !== '-' ? ' · rodízio ' + esc(t.rodizio) : ''),
+      ['Norte', 'Oeste', 'Centro', 'Leste', 'Sul'].map(function (k) { return k + ' ' + (z[k] != null ? z[k] : '?'); }).join(' · ') +
+      (oc.CentroBairro ? '<br>ônibus nos corredores: ' + oc.CentroBairro + ' km/h (centro→bairro), ' + oc.BairroCentro + ' km/h (bairro→centro)' : '') +
+      (t.parado_ha_min > 90 ? '<br>⚠️ os números da CET não mudam há ' + Math.round(t.parado_ha_min / 60) + ' h — a página dela pode estar desatualizada' : ''), '');
+  }
+
+  function painelSP() {
+    if (!SERVED) return '<div class="info">Abra pelo <b>Abrir CameraWeb.bat</b> para ver São Paulo agora.</div>';
+    atualizarClima();
+    if (!city) return '<div class="info">Juntando os sensores da cidade…</div>';
+    var h = '';
+    if (climaSP) h += '<div class="sp-clima">' + weatherHtml(climaSP) + '</div>';
+    h += cardAvisos() + cardCGE();
+    var at = city.alagamentos.filter(function (a) { return a.ativo; });
+    var intr = at.filter(function (a) { return !a.transitavel; }).length;
+    h += card('💧', 'Alagamentos agora (CGE)', at.length ? at.length + ' ativo' + (at.length > 1 ? 's' : '') + (intr ? ' · ' + intr + ' intransitáve' + (intr > 1 ? 'is' : 'l') : '') : 'nenhum',
+      city.alagamentos.length - at.length ? (city.alagamentos.length - at.length) + ' já encerrado(s) hoje' : 'nenhum registro hoje', at.length ? (intr ? 'alto' : 'medio') : '');
+    var circ = city.helicopteros.filter(function (x) { return x.circulando; });
+    h += card('🚁', 'Helicópteros no ar', city.helicopteros.length + (circ.length ? ' · ' + circ.length + ' circulando' : ''),
+      circ.length ? circ.map(function (x) { return esc(x.nome); }).join(', ') + ' — dando voltas sobre um ponto' : 'nenhum circulando', circ.length ? 'medio' : '');
+    var o = city.onibus || {};
+    if (o.erro === 'sem-token') h += card('🚌', 'Ônibus (SPTrans)', 'desligado', '<button data-casa="sptrans">Ligar os ônibus (token gratuito)</button>');
+    else if (o.erro && !o.total) h += card('🚌', 'Ônibus (SPTrans)', 'sem dados', o.erro === 'token' ? 'A SPTrans ainda não aceitou o token. Tokens novos podem demorar para ativar; o CameraWeb tenta de novo sozinho a cada 30 s. <button data-casa="sptrans">Trocar o token</button>' : esc(o.erro));
+    else h += card('🚌', 'Ônibus em circulação', (o.total || 0).toLocaleString('pt-BR') + (o.vel_media ? ' · ' + o.vel_media.toFixed(0) + ' km/h em média' : ''),
+      (o.trechos_parados || []).length ? o.trechos_parados.length + ' trecho(s) com vários ônibus parados há 4+ min' : 'nenhum trecho travado', (o.trechos_parados || []).length ? 'medio' : '');
+    var off = cetCams.filter(function (k) { return !k.ativa; });
+    h += cardLinhas(false) + cardCET();
+    h += card('🚦', 'Câmeras da CET', cetCams.length ? (cetCams.length - off.length) + ' de ' + cetCams.length + ' no ar' : '…',
+      off.length ? 'desligadas: ' + off.map(function (k) { return esc(k.titulo + ' × ' + k.sub); }).join('; ') : '', '');
+    // lista do que pede atenção, clicável
+    var itens = [];
+    at.forEach(function (a) { if (a.lat != null) itens.push({ ic: '💧', t: a.rua, s: (a.transitavel ? 'transitável' : 'INTRANSITÁVEL') + ' · ' + a.bairro + ' · ' + a.horario, lat: a.lat, lon: a.lon }); });
+    circ.forEach(function (x) { itens.push({ ic: '🚁', t: x.nome + ' circulando', s: x.circulando.voltas + ' voltas, raio ' + x.circulando.raio + ' m', lat: x.circulando.lat, lon: x.circulando.lon }); });
+    (o.trechos_parados || []).forEach(function (t) { itens.push({ ic: '🚌', t: t.onibus + ' ônibus parados', s: t.linhas.slice(0, 4).join(', '), lat: t.lat, lon: t.lon }); });
+    if (itens.length) h += '<div class="info" style="margin-top:8px">Para olhar de perto:</div>' + itens.map(function (it) {
+      return '<button class="ex-item" data-casa="ver" data-lat="' + it.lat + '" data-lon="' + it.lon + '"><span class="ic">' + it.ic +
+        '</span><span class="tx"><div class="t">' + esc(it.t) + '</div><div class="s">' + esc(it.s) + '</div></span></button>';
+    }).join('');
+    h += '<div class="info" style="margin-top:8px">Atualiza a cada 20 s. Fontes: CGE (Prefeitura), INMET, CET, Metrô/CPTM/concessionárias (via Grupo CCR), ADS-B aberto, SPTrans Olho Vivo.</div>';
+    return h;
+  }
+  function painelBairro() {
+    if (!casa) return '<div class="info">Marque o seu bairro: tudo num raio em volta dele aparece aqui, e você recebe um alerta quando ' +
+      'duas fontes diferentes apontarem algo acontecendo perto.</div><button class="ex-item" data-casa="clicar"><span class="ic">👆</span>' +
+      '<span class="tx"><div class="t">Clicar no mapa</div></span></button>' + (navigator.geolocation ? '<button class="ex-item" data-casa="gps">' +
+      '<span class="ic">📡</span><span class="tx"><div class="t">Usar a minha localização</div></span></button>' : '');
+    if (!SERVED) return '<div class="info">Abra pelo <b>Abrir CameraWeb.bat</b> para ver o seu bairro agora.</div>';
+    atualizarClima();
+    var r = avaliarBairro() || { sinais: [], fontes: 0 };
+    var nivel = r.fontes >= 2 ? 'alto' : r.fontes === 1 ? 'medio' : 'ok';
+    var h = '<div class="sp-alerta ' + nivel + '">' + (r.fontes >= 2 ? '🚨 <b>Alerta:</b> ' + r.fontes + ' fontes diferentes apontam algo acontecendo perto de você'
+      : r.fontes === 1 ? '⚠️ <b>Atenção:</b> um sinal perto de você (sozinho, pode não ser nada)' : '✅ Tudo calmo num raio de ' + (raioCasa() / 1000) + ' km') + '</div>';
+    if (climaCasa) h += '<div class="sp-clima">' + weatherHtml(climaCasa) + '</div>';
+    if (avisosAgora().length) h += cardAvisos();
+    r.sinais.forEach(function (x) {
+      h += '<button class="ex-item" data-casa="ver" data-lat="' + x.lat + '" data-lon="' + x.lon + '"><span class="ic">' + x.ic +
+        '</span><span class="tx"><div class="t" style="white-space:normal">' + esc(x.txt) + '</div><div class="s">' +
+        (L.latLng(casa.lat, casa.lon).distanceTo([x.lat, x.lon]) / 1000).toFixed(1).replace('.', ',') + ' km de você</div></span></button>';
+    });
+    var c = L.latLng(casa.lat, casa.lon), o = (city && city.onibus) || {};
+    if (o.pontos) {
+      var perto = o.pontos.filter(function (p) { return c.distanceTo([p[0], p[1]]) <= raioCasa(); });
+      var vs = perto.filter(function (p) { return p[2] != null; }).map(function (p) { return p[2]; });
+      h += card('🚌', 'Ônibus perto', perto.length + (vs.length ? ' · ' + Math.round(vs.reduce(function (a, b) { return a + b; }, 0) / vs.length) + ' km/h em média' : ''),
+        'no mapa: verde andando · laranja devagar · vermelho parado');
+    } else if (o.erro === 'sem-token') h += card('🚌', 'Ônibus', 'desligado', '<button data-casa="sptrans">Ligar os ônibus (token gratuito)</button>');
+    h += cardLinhas(true);
+    var hs = city ? city.helicopteros.filter(function (x) { return c.distanceTo([x.lat, x.lon]) <= raioCasa() + 3000; }) : [];
+    h += card('🚁', 'Helicópteros por perto', hs.length ? hs.map(function (x) { return esc(x.nome) + (x.circulando ? ' (circulando)' : ''); }).join(', ') : 'nenhum', '');
+    var cams = cetCams.filter(function (k) { return c.distanceTo([k.lat, k.lon]) <= raioCasa() + 2000; });
+    for (var id in camData) { var w = camData[id], l = w.location || {}; if (l.latitude != null && c.distanceTo([l.latitude, l.longitude]) <= raioCasa() + 2000) cams.push({ windy: id, w: w }); }
+    if (cams.length) h += '<div class="info" style="margin-top:8px">Câmeras perto para ver ao vivo:</div>' + cams.slice(0, 8).map(function (k, i) {
+      return '<button class="ex-item" data-bcam="' + i + '"><span class="ic">' + (k.windy ? '📷' : k.ativa ? '🚦' : '⚫') + '</span><span class="tx"><div class="t">' +
+        esc(k.windy ? k.w.title : k.titulo + ' × ' + k.sub) + '</div></span></button>';
+    }).join('');
+    camsBairro = cams;
+    h += '<div class="info" style="margin-top:10px">Raio: ' + [1000, 2000, 3000, 5000].map(function (m) {
+      return '<button data-casa="raio" data-r="' + m + '"' + (m === raioCasa() ? ' class="on"' : '') + '>' + (m / 1000) + ' km</button>';
+    }).join(' ') + ' · <button data-casa="ir">Ir até lá</button> <button data-casa="clicar">Mudar o ponto</button></div>';
+    return h;
+  }
+  var camsBairro = [];
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-bcam]');
+    if (!b) return;
+    var k = camsBairro[+b.getAttribute('data-bcam')];
+    if (k) k.windy ? openCam(k.windy, k.w) : openCET(k);
+  });
+
+  // ---------- painel Explorar: categorias em destaque ----------
+  // "Tudo": cada camada segue o seu botão liga/desliga (lembrado entre visitas).
+  // Uma categoria: só ela fica no mapa, e a lista mostra o que há nela.
+  var CATS = {
+    cams:   { layer: cluster,    btn: 'camBtn',   name: 'cams',    load: function () { load(); } },
+    cet:    { layer: cetLayer,   btn: 'cetBtn',   name: 'cet',     load: function () { setTimeout(loadCET, 0); }, servidor: true },
+    yt:     { layer: ytLayer,    btn: 'ytBtn',    name: 'youtube', load: function () { ytAsked = false; setTimeout(loadYT, 0); }, servidor: true },
+    radios: { layer: radioLayer, btn: 'radioBtn', name: 'radios',  load: function () { radioLast = ''; loadRadios(); } },
+    planes: { layer: planeLayer, btn: 'planeBtn', name: 'planes',  load: function () { setTimeout(loadPlanes, 0); }, servidor: true },
+    ships:  { layer: shipLayer,  btn: 'shipBtn',  name: 'ships',   load: function () { shipAsked = false; setTimeout(loadShips, 0); }, servidor: true },
+    // só existe como destaque: liga junto os aviões e os navios em volta das câmeras
+    spots:  { layer: spotLayer,  name: 'spots', so: true, junto: ['planes', 'ships'], load: function () { setTimeout(loadSpots, 0); } },
+    // painéis da cidade: mostram um resumo em vez de lista
+    sp:     { layer: cityLayer,  name: 'sp', so: true, junto: ['cet'], load: function () { setTimeout(loadCity, 0); } },
+    bairro: { layer: homeLayer,  name: 'bairro', so: true, junto: ['sp', 'cet', 'cams'], load: function () { desenharCasa(); } }
+  };
+  var cat = store('cameraweb.cat') || 'all';
+  if (cat !== 'all' && !CATS[cat]) cat = 'all';
+
+  function wanted(k) { return store('cameraweb.' + CATS[k].name) !== '0'; }   // ligado por padrão
+  function show(k, on) {
+    var c = CATS[k];
+    if (on && !map.hasLayer(c.layer)) { c.layer.addTo(map); c.load(); }
+    if (!on && map.hasLayer(c.layer)) map.removeLayer(c.layer);
+    if (c.btn) $(c.btn).classList.toggle('on', on);
+  }
+  Object.keys(CATS).forEach(function (k) {
+    if (!CATS[k].btn) return;
+    $(CATS[k].btn).onclick = function () {
+      var on = !map.hasLayer(CATS[k].layer);
+      store('cameraweb.' + CATS[k].name, on ? '1' : '0');
+      show(k, on);
+    };
+  });
+
+  function selectCat(k) {
+    cat = k;
+    store('cameraweb.cat', k);
+    Array.prototype.forEach.call($('chips').children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === k); });
+    Object.keys(CATS).forEach(function (x) {
+      show(x, k === 'all' ? !CATS[x].so && wanted(x) : x === k || (CATS[k].junto || []).indexOf(x) >= 0);
+    });
+    $('exAll').hidden = k !== 'all';
+    $('exList').hidden = k === 'all';
+    $('exList').scrollTop = 0;
+    // categorias pequenas: enquadra todas no mapa ao escolher
+    if (k === 'cet' && cetCams.length) fitAll(cetCams);
+    if (k === 'sp') irPara(-23.58, -46.63, 11);
+    if (k === 'bairro' && casa) irPara(casa.lat, casa.lon, 14);
+    if (k === 'sp' || k === 'bairro') desenharCidade();
+    refreshExplore();
+  }
+  function fitAll(list) {
+    if (!list.length) return;
+    map.fitBounds(L.latLngBounds(list.map(function (c) { return [c.lat, c.lon]; })).pad(0.15), { maxZoom: 14 });
+  }
+  $('chips').onclick = function (e) {
+    var b = e.target.closest('[data-cat]');
+    if (b) selectCat(b.getAttribute('data-cat'));
+  };
+  $('exClose').onclick = function () { $('explore').classList.add('closed'); store('cameraweb.explore', '0'); };
+  $('exOpen').onclick = function () { $('explore').classList.remove('closed'); store('cameraweb.explore', '1'); };
+  if (store('cameraweb.explore') === '0' || (store('cameraweb.explore') === null && window.innerWidth < 760))
+    $('explore').classList.add('closed');
+
+  // avisos sobre o servidor (YouTube, CET e aviões dependem dele)
+  function warn(html) { $('exWarn').innerHTML = html; $('exWarn').hidden = !html; }
+  function serverDown() {
+    warn('⚠️ O servidor do CameraWeb não está respondendo. Feche esta aba e abra pelo <b>Abrir CameraWeb.bat</b> (e deixe a janela preta aberta).');
+  }
+  if (!SERVED) warn('⚠️ YouTube, CET, aviões e navios só aparecem quando a página é aberta pelo <b>Abrir CameraWeb.bat</b>.');
+
+  // itens de cada categoria: {lat, lon, ic, t, s, img, open}
+  function inView(lat, lon, vb) { return vb.contains([lat, lon]); }
+  function items(k, vb) {
+    var out = [], id;
+    if (k === 'cams') {
+      for (id in camData) {
+        var c = camData[id], l = c.location || {};
+        if (inView(l.latitude, l.longitude, vb)) out.push({ lat: l.latitude, lon: l.longitude, ic: '📷', t: c.title || 'Câmera',
+          s: [l.city, l.country].filter(Boolean).join(', '), open: (function (id, c) { return function () { openCam(id, c); }; })(id, c) });
+      }
+    } else if (k === 'cet') {
+      cetCams.forEach(function (c) {
+        out.push({ lat: c.lat, lon: c.lon, ic: c.ativa ? '🚦' : '⚫', t: c.titulo + ' × ' + c.sub,
+          s: c.ativa ? (c.detalhe || 'CET-SP') : 'desligada no momento', open: function () { openCET(c); } });
+      });
+    } else if (k === 'yt') {
+      for (id in ytVideos) {
+        var v = ytVideos[id];
+        out.push({ lat: v.lat, lon: v.lon, ic: '📺', t: v.titulo, img: v.thumb,
+          s: v.assistindo ? v.assistindo.toLocaleString('pt-BR') + ' assistindo · ' + v.canal : v.canal,
+          open: (function (v) { return function () { openYT(v); }; })(v) });
+      }
+    } else if (k === 'radios') {
+      for (id in radioData) {
+        var r = radioData[id];
+        if (inView(r.geo_lat, r.geo_long, vb)) out.push({ lat: r.geo_lat, lon: r.geo_long, ic: '📻', t: r.name.trim(), pop: r.clickcount,
+          s: [r.state, r.country].filter(Boolean).join(', '), open: (function (r) { return function () { playStation(r); }; })(r) });
+      }
+    } else if (k === 'planes') {
+      for (id in planes) {
+        var p = planes[id], ll = p.m.getLatLng(), a = p.a, h = altM(a);
+        if (inView(ll.lat, ll.lng, vb)) out.push({ lat: ll.lat, lon: ll.lng, ic: '✈️', t: (a.flight || '').trim() || a.r || a.hex,
+          s: [a.desc || a.t, h === null ? 'no chão' : Math.round(h).toLocaleString('pt-BR') + ' m'].filter(Boolean).join(' · '),
+          open: (function (p) { return function () { p.m.openPopup(); }; })(p) });
+      }
+    } else if (k === 'spots') {
+      for (id in spots) {
+        var sq = spots[id];
+        out.push({ lat: sq.lat, lon: sq.lon, ic: sq.kind === 'airport' ? '🛫' : '⚓', t: sq.title, img: sq.img,
+          s: sq.src + ' · ' + sq.sub, open: sq.open });
+      }
+    } else if (k === 'ships') {
+      for (id in ships) {
+        var sp = ships[id], sl = sp.m.getLatLng(), sa = sp.a;
+        if (inView(sl.lat, sl.lng, vb)) out.push({ lat: sl.lat, lon: sl.lng, ic: '🚢', t: shipName(sa),
+          s: shipKind(sa.tipo)[0] + (sa.destino ? ' → ' + sa.destino : '') +
+            (sa.sog != null && sa.sog >= 0.5 ? ' · ' + (sa.sog * 1.852).toFixed(0) + ' km/h' : ''),
+          open: (function (sp) { return function () { sp.m.openPopup(); }; })(sp) });
+      }
+    }
+    return out;
+  }
+  var NOMES = { cams: 'webcams', cet: 'câmeras da CET', yt: 'câmeras do YouTube', radios: 'rádios', planes: 'aviões', ships: 'navios',
+    spots: 'câmeras de aeroportos e portos' };
+  var exTimer = null;
+  function refreshExplore() { clearTimeout(exTimer); exTimer = setTimeout(renderExplore, 250); }
+  function renderExplore() {
+    var vb = map.getBounds(), c = map.getCenter();
+    // contadores nos botões de categoria
+    Object.keys(CATS).forEach(function (k) {
+      var n = items(k, vb).length;
+      var span = $('chips').querySelector('[data-cat="' + k + '"] span');
+      if (span) span.textContent = n ? '(' + n + ')' : '';
+      if (k === 'bairro' && span && casa && city) {   // o alerta do bairro aparece no botão, mesmo em outra categoria
+        var fs = {};
+        sinaisPerto(casa.lat, casa.lon, raioCasa()).forEach(function (x) { fs[x.fonte] = 1; });
+        var nf = Object.keys(fs).length;
+        span.textContent = nf >= 2 ? '🚨' : nf === 1 ? '⚠️' : '';
+      }
+    });
+    if (cat === 'all') return;
+    if (cat === 'sp') { $('exList').innerHTML = painelSP(); return; }
+    if (cat === 'bairro') { $('exList').innerHTML = painelBairro(); return; }
+    var list = items(cat, vb);
+    var global = cat === 'cet' || cat === 'yt' || cat === 'spots';   // listas pequenas: mostra tudo, do mais perto ao mais longe
+    list.forEach(function (it) { it.d = c.distanceTo([it.lat, it.lon]); });
+    list.sort(cat === 'radios' ? function (a, b) { return (b.pop || 0) - (a.pop || 0); } : function (a, b) { return a.d - b.d; });
+    var total = list.length;
+    list = list.slice(0, 150);
+    var info;
+    if (CATS[cat].servidor && !SERVED) info = 'Abra pela página do <b>Abrir CameraWeb.bat</b> para ver ' + NOMES[cat] + '.';
+    else if (!total) info = global ? 'Carregando…' : 'Nenhum(a) nesta área do mapa. Afaste o zoom ou vá para outro lugar.' +
+      (cat === 'planes' && map.getZoom() < 6 ? ' (Aviões aparecem com o zoom mais perto.)' : '') +
+      (cat === 'ships' && map.getZoom() < 7 ? ' (Navios aparecem com o zoom mais perto: chegue perto de um porto ou do litoral.)' : '') +
+      (cat === 'ships' && map.getZoom() >= 7 ? ' Os navios vão aparecendo conforme mandam sinal (os em movimento a cada poucos segundos, os parados a cada 3 minutos).' : '');
+    else if (cat === 'spots') info = total + ' ' + NOMES[cat] + ', do mais perto ao mais longe do centro do mapa. ' +
+      'Ao abrir uma, os aviões e navios em volta aparecem juntos no mapa — dá para ver chegando e depois na câmera.';
+    else info = total + ' ' + NOMES[cat] + (global ? ', do mais perto ao mais longe do centro do mapa' :
+      cat === 'radios' ? ' nesta área, das mais ouvidas para as menos' : ' nesta área, do centro para fora') +
+      (total > 150 ? ' (mostrando 150)' : '') + '.';
+    var html = '<div class="info">' + info + '</div>';
+    list.forEach(function (it, i) {
+      html += '<button class="ex-item" data-i="' + i + '">' + (it.img ? '<img alt="" src="' + esc(it.img) + '">' : '<span class="ic">' + it.ic + '</span>') +
+        '<span class="tx"><div class="t">' + esc(it.t) + '</div><div class="s">' + esc(it.s || '') +
+        (global && it.d > 20000 ? ' · ' + Math.round(it.d / 1000).toLocaleString('pt-BR') + ' km' : '') + '</div></span></button>';
+    });
+    $('exList').innerHTML = html;
+    $('exList').onclick = function (e) {
+      var b = e.target.closest('[data-i]');
+      if (!b) return;
+      var it = list[+b.getAttribute('data-i')];
+      map.closePopup();
+      var z = Math.max(map.getZoom(), cat === 'planes' || cat === 'ships' ? map.getZoom() : 13);
+      setTimeout(it.open, irPara(it.lat, it.lon, z) ? 2500 : 300);
+    };
+  }
+  map.on('moveend', refreshExplore);
+  setInterval(function () { if (cat === 'planes' || cat === 'ships') refreshExplore(); }, 10000);
+
+  map.on('layerremove', function (e) { if (e.layer === ytLayer) ytLabel(); });
+  map.on('layerremove', function (e) { if (e.layer === planeLayer) planeLabel(); });
+  map.on('layerremove', function (e) { if (e.layer === shipLayer) shipLabel(); });
+
+  // dia/noite é só um véu sobre o mapa: continua sendo um botão na barra
+  (function () {
+    function set(on) {
+      if (on) { night.addTo(map); updateNight(); } else map.removeLayer(night);
+      $('nightBtn').classList.toggle('on', on);
+      store('cameraweb.night', on ? '1' : '0');
+    }
+    $('nightBtn').onclick = function () { set(!map.hasLayer(night)); };
+    set(store('cameraweb.night') !== '0');
+  })();
+  selectCat(cat);
+
+  // ---------- ponte com o modo 3D (módulo no fim da página) ----------
+  // irPara: no 3D o globo voa até lá (e o mapa plano acompanha); devolve true se voou.
+  function irPara(lat, lng, z, ms) {
+    var em3d = window.CW3D && window.CW3D.ativo();
+    map.setView([lat, lng], z, { animate: false });
+    if (em3d) window.CW3D.voar(lat, lng, z, ms);
+    return !!em3d;
+  }
+  var CAMADAS = { cams: cluster, cet: cetLayer, yt: ytLayer, spots: spotLayer, radios: radioLayer, planes: planeLayer, ships: shipLayer };
+  window.CW = {
+    map: map,
+    ligada: function (k) { return map.hasLayer(CAMADAS[k]); },
+    dados: {
+      cams: function () { return camData; }, cet: function () { return cetCams; }, yt: function () { return ytVideos; },
+      spots: function () { return spots; }, radios: function () { return radioData; },
+      planes: function () { return planes; }, ships: function () { return ships; }
+    },
+    abrir: { cam: openCam, cet: openCET, yt: openYT, radio: playStation },
+    altM: altM, planeColor: planeColor, planeInfo: planeInfo,
+    shipKind: shipKind, shipDir: shipDir, shipInfo: shipInfo,
+    svg: { aviao: PLANE_SVG, navio: SHIP_SVG }
+  };
+  // quando a categoria muda, o globo redesenha na hora
+  var principais = Object.keys(CAMADAS).map(function (k) { return CAMADAS[k]; });
+  map.on('layeradd layerremove', function (e) {
+    if (principais.indexOf(e.layer) >= 0 && window.CW3D && window.CW3D.ativo()) window.CW3D.redesenhar();
+  });
+
+  // Aberto pelo .bat: pega a chave guardada pelo servidor, sem precisar colar.
+  var chaveLida = false;
+  if (SERVED) {
+    fetch('/api/chave').then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (k) { if (k.trim()) store(KEY_STORE, k.trim()); })
+      .catch(function () {}).then(function () { chaveLida = true; load(); loadSpots(); if (casa) loadCity(); });
+  } else load();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/globe.gl@2.46.2/dist/globe.gl.min.js"></script>
+<script type="module">
+// ---------- modo 3D: o planeta inteiro ----------
+// Globe.gl (three.js). De longe: dia e noite de verdade (luzes das cidades no lado escuro),
+// atmosfera e céu estrelado. De perto: imagens de satélite em mosaico (Esri).
+// Os dados vêm da página principal (window.CW); o mapa plano continua por baixo, seguindo
+// o globo, para que as câmeras, aviões e navios da área continuem sendo carregados.
+import { TextureLoader, ShaderMaterial, Vector2 } from 'https://esm.sh/three@0.185.1';
+
+const IMG = 'https://cdn.jsdelivr.net/npm/three-globe@2.45.4/example/img/';
+const CW = window.CW;
+const $ = id => document.getElementById(id);
+const el = $('globe');
+let world = null, material = null, ativo = false, perto = false, ultimoToque = Date.now();
+
+// posição do Sol (mesma aproximação do mapa plano): ponto da Terra onde ele está a pino
+function pontoSubsolar(date) {
+  const rad = Math.PI / 180, jd = date.getTime() / 86400000 + 2440587.5, n = jd - 2451545.0;
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  const L = (280.460 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * rad;
+  const lambda = (L + 1.915 * Math.sin(g) + 0.02 * Math.sin(2 * g)) * rad, eps = (23.4393 - 0.0000004 * n) * rad;
+  const alpha = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda)) / rad;
+  const delta = Math.asin(Math.sin(eps) * Math.sin(lambda)) / rad;
+  let lng = alpha - gmst * 15;
+  lng = ((lng + 540) % 360) - 180;
+  return [lng, delta];
+}
+
+const SHADER = {
+  vertex: `varying vec3 vNormal; varying vec2 vUv;
+    void main() { vNormal = normalize(normalMatrix * normal); vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragment: `#define PI 3.141592653589793
+    uniform sampler2D dayTexture; uniform sampler2D nightTexture;
+    uniform vec2 sunPosition; uniform vec2 globeRotation;
+    varying vec3 vNormal; varying vec2 vUv;
+    float toRad(in float a) { return a * PI / 180.0; }
+    vec3 Polar2Cartesian(in vec2 c) { float theta = toRad(90.0 - c.x); float phi = toRad(90.0 - c.y);
+      return vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta)); }
+    void main() {
+      float invLon = toRad(globeRotation.x); float invLat = -toRad(globeRotation.y);
+      mat3 rotX = mat3(1, 0, 0, 0, cos(invLat), -sin(invLat), 0, sin(invLat), cos(invLat));
+      mat3 rotY = mat3(cos(invLon), 0, sin(invLon), 0, 1, 0, -sin(invLon), 0, cos(invLon));
+      vec3 sunDir = rotX * rotY * Polar2Cartesian(sunPosition);
+      float intensity = dot(normalize(vNormal), normalize(sunDir));
+      vec4 dayColor = texture2D(dayTexture, vUv);
+      vec3 n = texture2D(nightTexture, vUv).rgb;
+      vec4 nightColor = vec4(pow(n, vec3(1.7)) * 3.2 + vec3(0.0, 0.004, 0.012), 1.0);   // realça as luzes, escurece o resto
+      gl_FragColor = mix(nightColor, dayColor, smoothstep(-0.12, 0.12, intensity));
+    }`
+};
+
+// zoom do mapa plano <-> altitude da câmera no globo (em raios da Terra)
+const altDoZoom = z => Math.max(0.004, 2.5 * Math.pow(2, 3 - z));
+const zoomDaAlt = a => Math.max(2, Math.min(18, 3 - Math.log2(a / 2.5)));
+
+function criar() {
+  world = new Globe(el, { animateIn: true })
+    .backgroundImageUrl(IMG + 'night-sky.png')
+    .showAtmosphere(true).atmosphereColor('#7cc4ff').atmosphereAltitude(0.18)
+    .pointAltitude('altura').pointsTransitionDuration(0).pointResolution(8)
+    .pointColor('cor').pointRadius('raio').pointLabel('rotulo')
+    .onPointClick(p => { toque(); p.abrir(); })
+    .htmlElement('el').htmlAltitude('alt').htmlTransitionDuration(1800)
+    .ringColor(() => t => `rgba(255,176,60,${1 - t})`).ringMaxRadius('raioMax').ringPropagationSpeed(2).ringRepeatPeriod(1400)
+    .onGlobeClick(() => { toque(); fecharCartao(); })
+    .onZoom(mudouVista);
+  const c = world.controls();
+  c.minDistance = 100.4;          // dá para descer até ~25 km do chão
+  c.zoomSpeed = 1.6;
+  c.addEventListener('start', toque);
+  world.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const tl = new TextureLoader();
+  Promise.all([tl.loadAsync(IMG + 'earth-blue-marble.jpg'), tl.loadAsync(IMG + 'earth-night.jpg')]).then(([dia, noite]) => {
+    material = new ShaderMaterial({
+      uniforms: { dayTexture: { value: dia }, nightTexture: { value: noite },
+        sunPosition: { value: new Vector2(...pontoSubsolar(new Date())) }, globeRotation: { value: new Vector2() } },
+      vertexShader: SHADER.vertex, fragmentShader: SHADER.fragment
+    });
+    world.globeMaterial(material);
+    const pov = world.pointOfView();
+    material.uniforms.globeRotation.value.set(pov.lng, pov.lat);
+  });
+  setInterval(() => { if (material) material.uniforms.sunPosition.value.set(...pontoSubsolar(new Date())); }, 30000);
+  new ResizeObserver(() => { if (ativo) world.width(el.clientWidth).height(el.clientHeight); }).observe(el);
+}
+
+// a câmera mudou (pelo mouse ou por um voo programado, que não dispara onZoom: ver vigia abaixo)
+let ultimaVista = null;
+function mudouVista(pov) {
+  ultimaVista = pov;
+  if (material) material.uniforms.globeRotation.value.set(pov.lng, pov.lat);
+  trocarImagem(pov.altitude);
+  sincronizarMapa(pov);
+}
+setInterval(() => {
+  if (!ativo || !world) return;
+  const p = world.pointOfView(), u = ultimaVista;
+  if (!u || Math.abs(p.altitude - u.altitude) > u.altitude * 0.04 || Math.abs(p.lat - u.lat) + Math.abs(p.lng - u.lng) > u.altitude * 2) mudouVista(p);
+}, 400);
+
+// de perto, troca para fotos de satélite detalhadas (com folga para não ficar piscando)
+function trocarImagem(alt) {
+  if (!perto && alt < 0.32) {
+    perto = true;
+    world.globeTileEngineUrl((x, y, l) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${l}/${y}/${x}`);
+  } else if (perto && alt > 0.45) {
+    perto = false;
+    world.globeTileEngineUrl(null);
+  }
+}
+
+// o mapa plano (escondido atrás) acompanha o globo: assim os dados da área continuam vindo
+let syncTimer = null;
+function sincronizarMapa(pov) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { CW.map.setView([pov.lat, pov.lng], Math.round(zoomDaAlt(pov.altitude)), { animate: false }); desenhar(); }, 700);
+}
+
+// ---------- o que aparece sobre o globo ----------
+const COR = { cams: '#ff5a3c', cet: '#f7d10d', yt: '#ff2050', airport: '#9b7bff', port: '#18c0cf', radios: '#2bbfb0' };
+let ultimaEscala = 0;
+function desenhar() {
+  if (!ativo) return;
+  const pov = world.pointOfView(), esc = Math.min(0.32, Math.max(0.0012, pov.altitude * 0.11));
+  const altura = Math.min(0.004, pov.altitude * 0.008);   // de perto, pontos baixinhos (senão viram palitos)
+  const pts = [];
+  const add = (lat, lng, cor, peso, rotulo, abrir) => {
+    if (lat == null || lng == null) return;
+    pts.push({ lat, lng, cor, raio: esc * peso, altura, rotulo, abrir, d: Math.abs(lat - pov.lat) + Math.abs(lng - pov.lng) });
+  };
+  const txt = s => String(s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+  const lbl = (ic, t, s) => `<div style="background:#1a202bee;padding:6px 9px;border-radius:8px;border:1px solid #2c3442;font:13px Segoe UI">${ic} ${txt(t)}${s ? '<br><small style="color:#9aa5b5">' + txt(s) + '</small>' : ''}</div>`;
+  if (CW.ligada('cams')) for (const [id, c] of Object.entries(CW.dados.cams())) {
+    const l = c.location || {};
+    add(l.latitude, l.longitude, COR.cams, 1, lbl('📷', c.title, l.city), () => CW.abrir.cam(id, c));
+  }
+  if (CW.ligada('cet')) CW.dados.cet().forEach(c => add(c.lat, c.lon, c.ativa ? COR.cet : '#888', 0.8, lbl('🚦', c.titulo + ' × ' + c.sub), () => CW.abrir.cet(c)));
+  if (CW.ligada('yt')) for (const v of Object.values(CW.dados.yt())) add(v.lat, v.lon, COR.yt, 1.3, lbl('📺', v.titulo, v.canal), () => CW.abrir.yt(v));
+  if (CW.ligada('spots')) for (const s of Object.values(CW.dados.spots())) add(s.lat, s.lon, COR[s.kind], 1.4, lbl(s.kind === 'airport' ? '🛫' : '⚓', s.title, s.src), s.open);
+  if (CW.ligada('radios')) for (const r of Object.values(CW.dados.radios())) add(r.geo_lat, r.geo_long, COR.radios, 0.6, lbl('📻', r.name, r.state), () => CW.abrir.radio(r));
+  pts.sort((a, b) => a.d - b.d);
+  world.pointsData(pts.slice(0, 2500));
+  ultimaEscala = esc;
+  moverVeiculos();
+}
+
+// aviões e navios: elementos HTML que deslizam pelo globo (o elemento é reaproveitado)
+const veiculos = {};
+function veiculo(id, svg, cor, rot, abrir) {
+  let v = veiculos[id];
+  if (!v) {
+    const wrap = document.createElement('div');
+    wrap.className = 'g3v';
+    wrap.innerHTML = '<div>' + svg + '</div>';
+    wrap.onclick = e => { e.stopPropagation(); toque(); v.abrir(); };
+    v = veiculos[id] = { el: wrap };
+  }
+  v.abrir = abrir;
+  const inner = v.el.firstChild;
+  inner.style.color = cor;
+  inner.style.transform = 'rotate(' + rot + 'deg)';
+  return v;
+}
+function moverVeiculos() {
+  if (!ativo) return;
+  const lista = [], vivos = {};
+  const exagero = Math.min(25, world.pointOfView().altitude * 40);   // de longe a altura dá relevo; de perto, atrapalharia
+  if (CW.ligada('planes')) for (const [hx, p] of Object.entries(CW.dados.planes())) {
+    const ll = p.m.getLatLng(), a = p.a, h = CW.altM(a);
+    const v = veiculo('p' + hx, CW.svg.aviao, CW.planeColor(a), a.track || 0, () => cartao(CW.planeInfo(a)));
+    v.lat = ll.lat; v.lng = ll.lng; v.alt = h ? h / 6371000 * exagero : 0;
+    lista.push(v); vivos['p' + hx] = 1;
+  }
+  if (CW.ligada('ships')) for (const [mm, s] of Object.entries(CW.dados.ships())) {
+    const ll = s.m.getLatLng(), a = s.a;
+    const v = veiculo('s' + mm, CW.svg.navio, CW.shipKind(a.tipo)[1], CW.shipDir(a), () => cartao(CW.shipInfo(a)));
+    v.lat = ll.lat; v.lng = ll.lng; v.alt = 0;
+    lista.push(v); vivos['s' + mm] = 1;
+  }
+  for (const id in veiculos) if (!vivos[id]) delete veiculos[id];
+  world.htmlElementsData(lista);
+}
+
+// cartão com detalhes de avião/navio (no 3D não há o balão do mapa plano)
+function cartao(html) { $('g3card').innerHTML = html + '<button id="g3cardX" title="Fechar">✕</button>'; $('g3card').hidden = false; $('g3cardX').onclick = fecharCartao; }
+function fecharCartao() { $('g3card').hidden = true; }
+
+// gira sozinho devagar quando ninguém mexe
+function toque() { ultimoToque = Date.now(); if (world) world.controls().autoRotate = false; }
+setInterval(() => {
+  if (!ativo) return;
+  const c = world.controls(), parado = Date.now() - ultimoToque > 25000;
+  c.autoRotate = parado; c.autoRotateSpeed = 0.35;
+}, 2000);
+setInterval(() => { if (ativo) moverVeiculos(); }, 2000);
+setInterval(() => { if (ativo) desenhar(); }, 5000);
+
+// ---------- entrar e sair ----------
+function entrar() {
+  if (!world) criar();
+  ativo = true;
+  el.hidden = false;
+  document.body.classList.add('modo3d');
+  world.width(el.clientWidth || innerWidth).height(el.clientHeight || innerHeight).resumeAnimation();
+  const c = CW.map.getCenter();
+  world.pointOfView({ lat: c.lat, lng: c.lng, altitude: 3.2 }, 0);
+  world.pointOfView({ lat: c.lat, lng: c.lng, altitude: Math.max(altDoZoom(CW.map.getZoom()), 0.6) }, 2200);
+  toque();
+  desenhar();
+  $('g3Btn').textContent = '🗺️ Mapa';
+  try { localStorage.setItem('cameraweb.3d', '1'); } catch (e) {}
+}
+function sair() {
+  ativo = false;
+  el.hidden = true;
+  document.body.classList.remove('modo3d');
+  fecharCartao();
+  if (world) {
+    const pov = world.pointOfView();
+    CW.map.setView([pov.lat, pov.lng], Math.round(zoomDaAlt(pov.altitude)), { animate: false });
+    world.pauseAnimation();
+  }
+  $('g3Btn').textContent = '🌍 3D';
+  try { localStorage.setItem('cameraweb.3d', '0'); } catch (e) {}
+}
+$('g3Btn').onclick = () => (ativo ? sair() : entrar());
+
+// a página principal chama isto para voar até um lugar (lista do Explorar, sorteio...)
+window.CW3D = {
+  ativo: () => ativo,
+  voar(lat, lng, zoom, ms) {
+    toque();
+    const alt = altDoZoom(zoom || 12);
+    world.pointOfView({ lat, lng, altitude: Math.max(alt, 0.9) }, (ms || 2400) * 0.55);       // sobe um pouco...
+    setTimeout(() => world.pointOfView({ lat, lng, altitude: alt }, (ms || 2400) * 0.45), (ms || 2400) * 0.55);   // ...e mergulha
+    world.ringsData([{ lat, lng, raioMax: Math.max(0.04, alt * 6) }]);
+    setTimeout(() => world.ringsData([]), 9000);
+  },
+  redesenhar: () => desenhar(),
+  mundo: () => world   // para diagnóstico
+};
+try { if (localStorage.getItem('cameraweb.3d') === '1') entrar(); } catch (e) {}
+</script>
+
+</body>
+</html>

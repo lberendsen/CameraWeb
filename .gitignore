@@ -1,0 +1,13 @@
+# chaves pessoais das APIs (cada pessoa cria as suas; nunca publicar)
+chave-*.txt
+
+# caches refeitos automaticamente pelo servidor.py
+youtube-cache.json
+cidade-geo.json
+
+# Python
+__pycache__/
+*.pyc
+
+# página temporária usada nos testes
+_teste.html
